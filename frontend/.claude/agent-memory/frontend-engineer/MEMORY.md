@@ -1,0 +1,1 @@
+- [Generated Bundles API migration](project_generated_bundles_api.md) — old /api/bundles gone; all bundle logic now uses POST/GET /api/generated-bundles with string publicIds

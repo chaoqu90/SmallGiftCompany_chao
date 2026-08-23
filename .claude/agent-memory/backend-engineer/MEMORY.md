@@ -1,0 +1,2 @@
+- [Spring Boot 4.x Testcontainers and WebMvc test setup](project_spring_boot_4_testcontainers.md) — artifact IDs and packages changed in Spring Boot 4.1.0 vs 3.x; critical for test compilation
+- [Phase 1 Foundation — what was built](project_phase1_foundation.md) — backend scaffold: HealthController, CORS, GlobalExceptionHandler, Flyway V1 baseline, Testcontainers integration tests

@@ -1,0 +1,1 @@
+- [Eager-copy lazy collections in DTO factory methods](feedback_lazy_collection_dto.md) — Hibernate PersistentSet in a record field causes LazyInitializationException during Jackson serialization; copy to plain collection in from()
