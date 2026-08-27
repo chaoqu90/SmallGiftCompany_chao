@@ -58,6 +58,11 @@ provider:
     ADMIN_PASSWORD: ${env:ADMIN_PASSWORD}
     NODE_ENV: production
 
+package:
+  patterns:
+    - '!../**'
+    - '../backend-node/dist/lambda.js'
+
 functions:
   app:
     handler: ../backend-node/dist/lambda.handler
