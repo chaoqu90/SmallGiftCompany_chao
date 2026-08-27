@@ -24,7 +24,7 @@
 
 service: goodiebag-backend
 
-frameworkVersion: '4'
+frameworkVersion: '3'
 
 provider:
   name: aws

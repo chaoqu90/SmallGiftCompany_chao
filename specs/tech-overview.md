@@ -230,7 +230,7 @@ Generated bundles persist point-in-time snapshots of product data (name, SKU, co
 
 ## 10. Infrastructure as Code
 
-**Choice: Serverless Framework** (v4.x)
+**Choice: Serverless Framework** (v3.x)
 
 Everything is declared in `infra/serverless.yml` — a single CloudFormation stack manages both backend and frontend infrastructure.
 
