@@ -1,0 +1,1 @@
+- [Project overview](project_goodiebag.md) -- Goodie Bag MVP: children's goodie-bag e-commerce with dynamic bundle generation, Spring Boot 4.1 + PostgreSQL + React/Vite

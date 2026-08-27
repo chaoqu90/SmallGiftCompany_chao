@@ -1,0 +1,215 @@
+# Serverless Framework configuration for the Goodie Bag platform.
+#
+# Deploys two logical stacks in one CloudFormation stack:
+#
+#   BACKEND
+#     - Lambda function (Express app via serverless-http)
+#     - API Gateway HTTP API (catch-all route)
+#
+#   FRONTEND
+#     - S3 bucket (private — no public access)
+#     - CloudFront Origin Access Control (OAC)
+#     - S3 bucket policy (allows CloudFront OAC to read objects)
+#     - CloudFront distribution (custom domain: www.smallgift.shop)
+#       Requires: ACM certificate in us-east-1 + GoDaddy CNAME record
+#
+# Environment variables are sourced from ${env:*} at deploy time.
+# GitHub Actions Secrets: DATABASE_URL, CORS_ALLOWED_ORIGIN, ADMIN_USERNAME,
+#                         ADMIN_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# GitHub Actions Variables: FRONTEND_DOMAIN, ACM_CERTIFICATE_ARN
+#
+# See: specs/tech-overview.md §10
+# See: docs/readme/db-migration.md
+# See: production-deployment.md §6 (custom domain setup)
+
+service: goodiebag-backend
+
+frameworkVersion: '4'
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  memorySize: 512
+  timeout: 30
+  # No VPC — Lambda outside a VPC has full internet access to Supabase (public TLS)
+  # Adding a VPC here would BREAK connectivity to Supabase unless a NAT Gateway is added
+
+  httpApi:
+    cors:
+      allowedOrigins:
+        - ${env:CORS_ALLOWED_ORIGIN}
+      allowedMethods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+        - OPTIONS
+      allowedHeaders:
+        - '*'
+      allowCredentials: false
+      maxAge: 3600
+
+  environment:
+    DATABASE_URL: ${env:DATABASE_URL}
+    CORS_ALLOWED_ORIGIN: ${env:CORS_ALLOWED_ORIGIN}
+    ADMIN_USERNAME: ${env:ADMIN_USERNAME}
+    ADMIN_PASSWORD: ${env:ADMIN_PASSWORD}
+    NODE_ENV: production
+
+functions:
+  app:
+    handler: ../backend-node/dist/lambda.handler
+    description: 'Goodie Bag backend — Express on Lambda via serverless-http'
+    events:
+      # Catch-all: all HTTP methods, all paths
+      - httpApi:
+          method: '*'
+          path: '/{proxy+}'
+      # Root path (without trailing slash)
+      - httpApi:
+          method: '*'
+          path: '/'
+
+# ── CloudFormation resources for the frontend (S3 + CloudFront) ──────────────
+resources:
+  Resources:
+
+    # S3 bucket — private static asset storage.
+    # Public access is fully blocked; CloudFront accesses it via OAC.
+    FrontendBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        # No BucketName — let CloudFormation generate a unique name.
+        # Reference via !Ref FrontendBucket or the Outputs below.
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+
+    # CloudFront Origin Access Control (OAC) — modern replacement for OAI.
+    # Allows CloudFront to sign requests to the private S3 bucket.
+    FrontendOAC:
+      Type: AWS::CloudFront::OriginAccessControl
+      Properties:
+        OriginAccessControlConfig:
+          Name: !Sub '${AWS::StackName}-frontend-oac'
+          OriginAccessControlOriginType: s3
+          SigningBehavior: always
+          SigningProtocol: sigv4
+
+    # S3 bucket policy — grants the CloudFront distribution read access via OAC.
+    # No other principal can read the bucket.
+    FrontendBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref FrontendBucket
+        PolicyDocument:
+          Statement:
+            - Sid: AllowCloudFrontOAC
+              Effect: Allow
+              Principal:
+                Service: cloudfront.amazonaws.com
+              Action: s3:GetObject
+              Resource: !Sub '${FrontendBucket.Arn}/*'
+              Condition:
+                StringEquals:
+                  AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}'
+
+    # CloudFront distribution.
+    #
+    # Origin:        Private S3 bucket accessed via OAC
+    # HTTPS:         Redirect HTTP → HTTPS; TLSv1.2 minimum
+    # SPA routing:   403 and 404 from S3 are rewritten to /index.html with 200
+    #                so that React Router can handle client-side routes
+    # Caching:       /index.html — no cache (always fresh)
+    #                /assets/*   — long cache (Vite content-hashes filenames)
+    FrontendDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+        DistributionConfig:
+          Enabled: true
+          Comment: !Sub '${AWS::StackName} frontend'
+          DefaultRootObject: index.html
+
+          Origins:
+            - Id: S3Origin
+              DomainName: !GetAtt FrontendBucket.RegionalDomainName
+              S3OriginConfig:
+                # Must be empty string when using OAC (not OAI)
+                OriginAccessIdentity: ''
+              OriginAccessControlId: !GetAtt FrontendOAC.Id
+
+          DefaultCacheBehavior:
+            TargetOriginId: S3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [GET, HEAD, OPTIONS]
+            CachedMethods: [GET, HEAD]
+            Compress: true
+            # Managed-CachingOptimized policy (AWS managed)
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+          # index.html — no cache so deploys are immediately visible
+          CacheBehaviors:
+            - PathPattern: /index.html
+              TargetOriginId: S3Origin
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods: [GET, HEAD]
+              CachedMethods: [GET, HEAD]
+              Compress: true
+              # Managed-CachingDisabled policy
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+
+          # SPA fallback — S3 returns 403 (key not found with OAC) or 404.
+          # Both are rewritten to /index.html so React Router handles the route.
+          CustomErrorResponses:
+            - ErrorCode: 403
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 0
+            - ErrorCode: 404
+              ResponseCode: 200
+              ResponsePagePath: /index.html
+              ErrorCachingMinTTL: 0
+
+          # Custom domain: www.smallgift.shop
+          # Requires an ACM certificate (us-east-1) that covers this domain.
+          # After deploy, point a CNAME record in GoDaddy:
+          #   www  →  <CloudFrontDomainName output>
+          Aliases:
+            - ${env:FRONTEND_DOMAIN}
+
+          # ACM certificate ARN — must be issued in us-east-1 (CloudFront requirement).
+          # Passed as a GitHub Actions Variable (ACM_CERTIFICATE_ARN).
+          ViewerCertificate:
+            AcmCertificateArn: ${env:ACM_CERTIFICATE_ARN}
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+
+          HttpVersion: http2and3
+          PriceClass: PriceClass_100  # US, Canada, Europe only — cheapest tier
+
+  # ── Stack outputs — read by the deploy workflow to wire frontend → backend ──
+  Outputs:
+
+    # The live API Gateway URL — used as VITE_API_BASE_URL when building the frontend
+    ApiGatewayUrl:
+      Description: API Gateway HTTP API endpoint
+      Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+
+    # S3 bucket name — used by the deploy workflow to sync the frontend build
+    FrontendBucketName:
+      Description: S3 bucket for frontend static assets
+      Value: !Ref FrontendBucket
+
+    # CloudFront raw domain — use this as the CNAME target in GoDaddy DNS
+    CloudFrontDomainName:
+      Description: CloudFront distribution domain (use as CNAME target in GoDaddy)
+      Value: !GetAtt FrontendDistribution.DomainName
+
+    # Distribution ID — used by the deploy workflow to invalidate the CDN cache
+    CloudFrontDistributionId:
+      Description: CloudFront distribution ID
+      Value: !Ref FrontendDistribution

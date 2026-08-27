@@ -1,0 +1,178 @@
+name: Deploy
+
+# Deploys the full platform on every push to main.
+# Runs AFTER the CI workflow passes (lint, build, unit tests).
+#
+# Job order:
+#   1. deploy-backend  — DB migrations + Lambda + API Gateway + S3 + CloudFront
+#   2. deploy-frontend — Build React SPA and sync to S3, then invalidate CloudFront
+#
+# GitHub Secrets required (Settings → Secrets and variables → Actions → Secrets):
+#   DATABASE_URL          — Supabase transaction-mode URL (port 6543)
+#   CORS_ALLOWED_ORIGIN   — https://www.smallgift.shop
+#   ADMIN_USERNAME        — HTTP Basic auth username
+#   ADMIN_PASSWORD        — HTTP Basic auth password
+#   AWS_ACCESS_KEY_ID     — IAM user key (needs Lambda, API GW, S3, CloudFront, CFn)
+#   AWS_SECRET_ACCESS_KEY — IAM user secret
+#
+# GitHub Variables required (Settings → Secrets and variables → Actions → Variables):
+#   FRONTEND_DOMAIN       — www.smallgift.shop
+#   ACM_CERTIFICATE_ARN   — arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID
+#                           (must be issued in us-east-1; see production-deployment.md §6.2)
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Backend (Lambda + API Gateway + S3 bucket + CloudFront) ──────────
+  deploy-backend:
+    name: Migrate + Deploy Backend
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      # GitHub Actions Variables (non-sensitive — visible in logs)
+      FRONTEND_DOMAIN: ${{ vars.FRONTEND_DOMAIN }}
+      ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
+
+    # Expose stack outputs as job outputs so deploy-frontend can consume them
+    outputs:
+      api_url: ${{ steps.stack-outputs.outputs.api_url }}
+      bucket_name: ${{ steps.stack-outputs.outputs.bucket_name }}
+      cf_domain: ${{ steps.stack-outputs.outputs.cf_domain }}
+      cf_distribution_id: ${{ steps.stack-outputs.outputs.cf_distribution_id }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend-node/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend-node
+        run: npm ci
+
+      # Run DB migrations BEFORE deploying new Lambda code.
+      # node-pg-migrate reads DATABASE_URL from the environment.
+      - name: Run database migrations
+        working-directory: backend-node
+        run: npm run migrate
+
+      # Build the ESM Lambda bundle (esbuild → dist/lambda.js)
+      - name: Build Lambda bundle
+        working-directory: backend-node
+        run: npm run build
+
+      - name: Install Serverless Framework
+        run: npm install -g serverless@4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Deploy Lambda + API Gateway + S3 bucket + CloudFront distribution.
+      # FRONTEND_DOMAIN and ACM_CERTIFICATE_ARN are read by serverless.yml
+      # via ${env:FRONTEND_DOMAIN} and ${env:ACM_CERTIFICATE_ARN}.
+      - name: Deploy backend (Serverless Framework)
+        working-directory: infra
+        run: serverless deploy --verbose
+
+      # Read CloudFormation stack outputs and expose as step outputs.
+      # These are consumed by the deploy-frontend job.
+      - name: Read CloudFormation stack outputs
+        id: stack-outputs
+        run: |
+          OUTPUTS=$(aws cloudformation describe-stacks \
+            --stack-name goodiebag-backend-prod \
+            --query 'Stacks[0].Outputs' \
+            --output json)
+
+          API_URL=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="ApiGatewayUrl") | .OutputValue')
+          BUCKET=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="FrontendBucketName") | .OutputValue')
+          CF_DOMAIN=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDomainName") | .OutputValue')
+          CF_ID=$(echo "$OUTPUTS" | jq -r '.[] | select(.OutputKey=="CloudFrontDistributionId") | .OutputValue')
+
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "bucket_name=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "cf_domain=$CF_DOMAIN" >> "$GITHUB_OUTPUT"
+          echo "cf_distribution_id=$CF_ID" >> "$GITHUB_OUTPUT"
+
+          echo "API Gateway URL: $API_URL"
+          echo "S3 Bucket:       $BUCKET"
+          echo "CloudFront:      https://$CF_DOMAIN"
+          echo "Custom domain:   https://${{ vars.FRONTEND_DOMAIN }}"
+          echo "Distribution ID: $CF_ID"
+
+  # ── Job 2: Frontend (Build React SPA → S3 → CloudFront invalidation) ────────
+  deploy-frontend:
+    name: Build + Deploy Frontend
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy-backend  # Wait for backend deploy to get bucket name + CF ID
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Build the React SPA.
+      # VITE_API_BASE_URL is embedded at build time by Vite into import.meta.env.
+      # It points at the API Gateway URL from the backend deploy job.
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ needs.deploy-backend.outputs.api_url }}
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Upload build output to S3.
+      # Cache-Control headers:
+      #   index.html  — no-cache (always fetches fresh after deploy)
+      #   assets/*    — 1 year immutable (Vite content-hashes filenames)
+      - name: Upload index.html (no-cache)
+        run: |
+          aws s3 cp frontend/dist/index.html \
+            s3://${{ needs.deploy-backend.outputs.bucket_name }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Upload assets (long-cache)
+        run: |
+          aws s3 sync frontend/dist/ \
+            s3://${{ needs.deploy-backend.outputs.bucket_name }}/ \
+            --exclude "index.html" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+
+      # Bust the CloudFront cache so users immediately see the new deploy.
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ needs.deploy-backend.outputs.cf_distribution_id }} \
+            --paths "/*"
