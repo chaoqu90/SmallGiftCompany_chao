@@ -317,7 +317,7 @@ export async function generate(
     bundleTemplateId: template.id,
     baseRetailPrice: Math.round(baseRetailPrice * 100) / 100,
     standardItemCogsSnapshot: Math.round(standardItemCogsSnapshot * 100) / 100,
-    items: slotSelections.map((s, idx) => ({
+    items: slotSelections.map((s, _idx) => ({
       slotCode: s.slot.slot_code,
       productId: s.product.id,
       productNameSnapshot: s.product.name,

@@ -46,7 +46,7 @@ adminProductsRouter.use(basicAuth);
  * Parses :id param as a positive integer.
  * Calls next() with a 400 error if invalid.
  */
-function parseId(idStr: string, res: Response, next: NextFunction): number | null {
+function parseId(idStr: string, res: Response, _next: NextFunction): number | null {
   const id = parseInt(idStr, 10);
   if (!Number.isInteger(id) || id <= 0 || String(id) !== idStr) {
     res.status(400).json({

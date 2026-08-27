@@ -14,7 +14,7 @@ import { ALL_INTERESTS, ALL_AUDIENCE_PREFERENCES, ALL_PARTY_TYPES } from '../typ
 import { filterEligibleProducts, isAudienceCompatible } from './productEligibility.js';
 import { scoreProduct } from './productScoring.js';
 import { selectTemplateCode, FALLBACK_TEMPLATE_CODE } from './bundleTemplateSelector.js';
-import { selectUpgradesForCeilingPath } from './upgradeGeneration.js';
+import { selectUpgradesForCeilingPath as _selectUpgradesForCeilingPath } from './upgradeGeneration.js';
 
 // Age midpoints representing the three age bands (3–5, 6–8, 9–12)
 const AGE_MIDPOINTS = [4, 7, 11];
