@@ -8,12 +8,13 @@ name: Deploy
 #   2. deploy-frontend — Build React SPA and sync to S3, then invalidate CloudFront
 #
 # GitHub Secrets required (Settings → Secrets and variables → Actions → Secrets):
-#   DATABASE_URL          — Supabase transaction-mode URL (port 6543)
-#   CORS_ALLOWED_ORIGIN   — https://www.smallgift.shop
-#   ADMIN_USERNAME        — HTTP Basic auth username
-#   ADMIN_PASSWORD        — HTTP Basic auth password
-#   AWS_ACCESS_KEY_ID     — IAM user key (needs Lambda, API GW, S3, CloudFront, CFn)
-#   AWS_SECRET_ACCESS_KEY — IAM user secret
+#   DATABASE_URL             — Supabase transaction-mode URL (port 6543)
+#   CORS_ALLOWED_ORIGIN      — https://www.smallgift.shop
+#   ADMIN_USERNAME           — HTTP Basic auth username
+#   ADMIN_PASSWORD           — HTTP Basic auth password
+#   AWS_ACCESS_KEY_ID        — IAM user key (needs Lambda, API GW, S3, CloudFront, CFn)
+#   AWS_SECRET_ACCESS_KEY    — IAM user secret
+#   SERVERLESS_LICENSE_KEY   — Serverless Framework V4 license key (free at app.serverless.com)
 #
 # GitHub Variables required (Settings → Secrets and variables → Actions → Variables):
 #   FRONTEND_DOMAIN       — www.smallgift.shop
@@ -36,6 +37,7 @@ jobs:
       CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      SERVERLESS_LICENSE_KEY: ${{ secrets.SERVERLESS_LICENSE_KEY }}
       # GitHub Actions Variables (non-sensitive — visible in logs)
       FRONTEND_DOMAIN: ${{ vars.FRONTEND_DOMAIN }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
