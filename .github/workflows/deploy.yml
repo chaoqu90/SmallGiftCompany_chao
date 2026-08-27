@@ -37,7 +37,7 @@ jobs:
       CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-      SERVERLESS_LICENSE_KEY: ${{ secrets.SERVERLESS_LICENSE_KEY }}
+      SERVERLESS_ACCESS_KEY: ${{ secrets.SERVERLESS_LICENSE_KEY }}
       # GitHub Actions Variables (non-sensitive — visible in logs)
       FRONTEND_DOMAIN: ${{ vars.FRONTEND_DOMAIN }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
