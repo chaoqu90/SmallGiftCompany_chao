@@ -95,7 +95,7 @@ jobs:
         id: stack-outputs
         run: |
           OUTPUTS=$(aws cloudformation describe-stacks \
-            --stack-name goodiebag-backend-prod \
+            --stack-name goodiebag-backend-dev \
             --query 'Stacks[0].Outputs' \
             --output json)
 
