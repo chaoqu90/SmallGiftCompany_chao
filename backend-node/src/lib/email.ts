@@ -186,18 +186,28 @@ function buildFuturePartyText(data: FuturePartyEmailData): string {
  */
 export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<void> {
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
+  const subject = 'Your personalised goodie bag is ready!';
+  const textBody = buildFuturePartyText(data);
+
+  console.log('[email] Sending future-party email', {
+    from,
+    to: data.toEmail,
+    subject,
+    body: textBody,
+  });
 
   await sesClient.send(new SendEmailCommand({
     Destination: { ToAddresses: [data.toEmail] },
     Source: from,
     Message: {
-      Subject: { Data: 'Your personalised goodie bag is ready!', Charset: 'UTF-8' },
+      Subject: { Data: subject, Charset: 'UTF-8' },
       Body: {
         Html: { Data: buildFuturePartyHtml(data), Charset: 'UTF-8' },
-        Text: { Data: buildFuturePartyText(data), Charset: 'UTF-8' },
+        Text: { Data: textBody, Charset: 'UTF-8' },
       },
     },
   }));
+  console.log('[email] Future-party email sent to', data.toEmail);
   // No try/catch — errors propagate to the admin route handler (AC6.5).
 }
 
@@ -270,21 +280,29 @@ function buildSignupPromotionText(data: SignupPromotionEmailData): string {
  */
 export async function sendSignupPromotionEmail(data: SignupPromotionEmailData): Promise<void> {
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
+  const subject = "You're signed up — see you at the Loudoun Children's Business Fair!";
+  const textBody = buildSignupPromotionText(data);
+
+  console.log('[email] Sending signup-promotion email', {
+    from,
+    to: data.toEmail,
+    subject,
+    body: textBody,
+  });
+
   try {
     await sesClient.send(new SendEmailCommand({
       Destination: { ToAddresses: [data.toEmail] },
       Source: from,
       Message: {
-        Subject: {
-          Data: "You're signed up — see you at the Loudoun Children's Business Fair!",
-          Charset: 'UTF-8',
-        },
+        Subject: { Data: subject, Charset: 'UTF-8' },
         Body: {
           Html: { Data: buildSignupPromotionHtml(data), Charset: 'UTF-8' },
-          Text: { Data: buildSignupPromotionText(data), Charset: 'UTF-8' },
+          Text: { Data: textBody, Charset: 'UTF-8' },
         },
       },
     }));
+    console.log('[email] Signup-promotion email sent to', data.toEmail);
   } catch (err) {
     // Email failure must not block the 201 response (AC4.6).
     console.warn('[email] Failed to send signup-promotion email to', data.toEmail, ':', err);
@@ -293,16 +311,34 @@ export async function sendSignupPromotionEmail(data: SignupPromotionEmailData): 
 
 export async function sendOrderConfirmation(order: OrderEmailData): Promise<void> {
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
+  const subject = `Your Goodie Bag Order #${order.publicId}`;
+
+  const itemSummary = order.lineItems
+    .map(li => `  - ${li.interest.replace(/_/g, ' ')} Bundle (${li.upgradeTier})${li.giftBagName ? ` + ${li.giftBagName}` : ''} x${li.quantity} @ $${li.unitPrice.toFixed(2)} = $${li.lineTotal.toFixed(2)}`)
+    .join('\n');
+
+  console.log('[email] Sending order-confirmation email', {
+    from,
+    to: order.customerEmail,
+    subject,
+    body: [
+      `Order: ${order.publicId}`,
+      `Customer: ${order.customerName ?? '(no name)'}`,
+      `Items:\n${itemSummary}`,
+      `Total: $${order.total.toFixed(2)}`,
+    ].join('\n'),
+  });
 
   try {
     await sesClient.send(new SendEmailCommand({
       Destination: { ToAddresses: [order.customerEmail] },
       Source: from,
       Message: {
-        Subject: { Data: `Your Goodie Bag Order #${order.publicId}`, Charset: 'UTF-8' },
+        Subject: { Data: subject, Charset: 'UTF-8' },
         Body: { Html: { Data: buildHtml(order), Charset: 'UTF-8' } },
       },
     }));
+    console.log('[email] Order-confirmation email sent to', order.customerEmail, 'for order', order.publicId);
   } catch (err) {
     // Email failure must not cause the webhook to return 5xx (Stripe would retry infinitely).
     // Also handles local dev where AWS credentials may not be configured.
