@@ -76,11 +76,11 @@ provider:
 package:
   patterns:
     - '!../**'
-    - '../backend-node/dist/lambda.js'
+    - 'dist/lambda.js'
 
 functions:
   app:
-    handler: ../backend-node/dist/lambda.handler
+    handler: dist/lambda.handler
     description: 'Goodie Bag backend — Express on Lambda via serverless-http'
     events:
       # Catch-all: all HTTP methods, all paths

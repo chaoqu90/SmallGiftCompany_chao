@@ -11,3 +11,4 @@
 .DS_Store
 /backend-node/node_modules/
 /.claude/
+infra/dist/
