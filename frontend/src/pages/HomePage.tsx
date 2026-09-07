@@ -1,11 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import { GiftFinder } from '../components/GiftFinder'
+import { FuturePartyModal } from '../components/FuturePartyModal'
 import { COLORS } from '../theme'
 
 export function HomePage() {
   const { hash } = useLocation()
+  const [futurePartyOpen, setFuturePartyOpen] = useState(false)
 
   useEffect(() => {
     if (hash === '#finder') {
@@ -56,20 +58,43 @@ export function HomePage() {
             Good Stuff. Handpicked By Kids.
           </Typography>
 
-          <Button
-            variant="contained"
-            size="large"
-            href="#finder"
-            sx={{
-              fontSize: '1rem',
-              py: 1.5,
-              px: 4,
-              backgroundColor: COLORS.coral,
-              '&:hover': { backgroundColor: '#e06b57' },
-            }}
-          >
-            BUILD YOURS NOW
-          </Button>
+          <Stack direction="column" alignItems="center" spacing={2}>
+            <Button
+              variant="contained"
+              size="large"
+              href="#finder"
+              sx={{
+                fontSize: '1rem',
+                py: 1.5,
+                px: 4,
+                backgroundColor: COLORS.coral,
+                '&:hover': { backgroundColor: '#e06b57' },
+              }}
+            >
+              BUILD YOURS NOW
+            </Button>
+
+            {/* AC1.1 — Plan For Future button, visually secondary (AC1.2) */}
+            <Button
+              variant="outlined"
+              size="large"
+              onClick={() => setFuturePartyOpen(true)}
+              sx={{
+                fontSize: '1rem',
+                py: 1.5,
+                px: 4,
+                color: COLORS.coral,
+                borderColor: COLORS.coral,
+                '&:hover': {
+                  borderColor: '#e06b57',
+                  color: '#e06b57',
+                  backgroundColor: 'rgba(244,127,107,0.05)',
+                },
+              }}
+            >
+              PLAN FOR FUTURE
+            </Button>
+          </Stack>
         </Container>
       </Box>
 
@@ -105,6 +130,9 @@ export function HomePage() {
           <GiftFinder />
         </Container>
       </Box>
+
+      {/* Future Party registration modal (AC1.3, AC1.4) */}
+      <FuturePartyModal open={futurePartyOpen} onClose={() => setFuturePartyOpen(false)} />
     </Box>
   )
 }

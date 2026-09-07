@@ -191,3 +191,34 @@ export const AffinityPayloadSchema = z.object({
 });
 
 export type AffinityPayload = z.infer<typeof AffinityPayloadSchema>;
+
+// ─── Future Party (FEAT-004) ──────────────────────────────────────────────────
+
+/**
+ * Zod schema for POST /api/future-parties request body.
+ * Server-side future-date check is applied in the route handler after parse.
+ * Requirements: AC3.2, AC3.3
+ */
+export const FuturePartyRequestSchema = z.object({
+  /** Parent's email address — required, valid format, max 254 chars */
+  email:     z.string().email().max(254),
+
+  /** Party date — required, ISO 8601 date (YYYY-MM-DD) */
+  partyDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'partyDate must be YYYY-MM-DD'),
+
+  /** Kid gender — required enum */
+  kidGender: z.enum(['BOY', 'GIRL', 'MIXED']),
+
+  /** Kid age — required, integer 1–12 inclusive */
+  kidAge:    z.number().int().min(1).max(12),
+});
+
+export type FuturePartyRequest = z.infer<typeof FuturePartyRequestSchema>;
+
+/**
+ * Zod schema for PATCH /admin/api/future-parties/:id/link-bundle request body.
+ * Requirements: AC5.5
+ */
+export const LinkBundleRequestSchema = z.object({
+  bundlePublicId: z.string().min(1).max(30),
+});

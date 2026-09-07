@@ -7,6 +7,11 @@ import { BundleCustomizationPage } from './BundleCustomizationPage'
 import * as generatedBundlesApi from '../api/generatedBundles'
 import type { GeneratedBundleResponse } from '../types/catalog'
 
+vi.mock('../contexts/CartContext', () => ({
+  useCart: () => ({ sessionId: 'test-session', cartCount: 0, refreshCart: vi.fn(), setCartCount: vi.fn() }),
+  CartProvider: ({ children }: { children: React.ReactNode }) => children,
+}))
+
 afterEach(() => vi.restoreAllMocks())
 
 // ── Test fixtures ────────────────────────────────────────────────────────────

@@ -18,7 +18,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
-  Button,
   CircularProgress,
   Typography,
   Alert,
@@ -28,9 +27,7 @@ import { supabase } from '../lib/supabaseClient'
 
 export function AuthCallbackPage() {
   const navigate = useNavigate()
-  const [error,  setError]  = useState<string | null>(null)
-  const [email,  setEmail]  = useState<string | null>(null)
-  const [resent, setResent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
@@ -44,24 +41,15 @@ export function AuthCallbackPage() {
     // AC2.2 / AC4.3 — exchange the PKCE code for a session
     supabase.auth
       .exchangeCodeForSession(window.location.search)
-      .then(({ error: exchangeError, data }) => {
+      .then(({ error: exchangeError }) => {
         if (exchangeError) {
           // AC2.3 — invalid or expired link
-          setEmail(data?.session?.user?.email ?? null)
           setError('This verification link is invalid or has expired.')
           return
         }
         navigate('/profile')
       })
   }, [navigate])
-
-  // ── Resend verification email ─────────────────────────────────────────────
-
-  async function handleResend() {
-    if (!email) return
-    await supabase.auth.resend({ type: 'signup', email })
-    setResent(true)
-  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -78,15 +66,9 @@ export function AuthCallbackPage() {
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
-          {resent ? (
-            <Typography variant="body2" color="success.main">
-              A new verification email has been sent. Check your inbox.
-            </Typography>
-          ) : (
-            <Button variant="outlined" onClick={handleResend} disabled={!email}>
-              Resend verification email
-            </Button>
-          )}
+          <Typography variant="body2" color="text.secondary">
+            Please request a new verification link from the sign-up page.
+          </Typography>
         </Paper>
       </Box>
     )

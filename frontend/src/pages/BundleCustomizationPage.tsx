@@ -438,6 +438,7 @@ export function BundleCustomizationPage() {
                 disabled={addingToCart}
                 startIcon={addingToCart ? <CircularProgress size={16} color="inherit" /> : null}
                 onClick={async () => {
+                  setContinued(true)
                   if (!bundle || !sessionId) return
                   setCartError(null)
                   setAddingToCart(true)

@@ -107,6 +107,24 @@ export interface AffinitiesPayload {
   occasions: { occasion: string }[]
 }
 
+// ─── Future Parties (FEAT-004) ────────────────────────────────────────────────
+
+/**
+ * Admin representation of a future party lead.
+ * Requirements: AC4.3, AC4.4, AC5.1, AC6.1, AC6.2
+ * Design: specs/future-party/design.md §5.2
+ */
+export interface AdminFutureParty {
+  id:                   number
+  email:                string
+  partyDate:            string
+  kidGender:            'BOY' | 'GIRL' | 'MIXED'
+  kidAge:               number
+  submittedAt:          string
+  linkedBundlePublicId: string | null
+  bundleSentAt:         string | null
+}
+
 export const adminApi = {
   getProducts: (auth: string) =>
     adminRequest<AdminProduct[]>('/admin/api/products/', auth),
@@ -184,6 +202,25 @@ export const adminApi = {
     adminRequest<AdminProduct>(`/admin/api/products/${id}/details`, auth, {
       method: 'PATCH',
       body: JSON.stringify({ name, category, formFactor }),
+    }),
+
+  // ── Future Parties (FEAT-004) ──────────────────────────────────────────────
+
+  /** GET /admin/api/future-parties — list all future party submissions, newest first */
+  getFutureParties: (auth: string) =>
+    adminRequest<AdminFutureParty[]>('/admin/api/future-parties', auth),
+
+  /** PATCH /admin/api/future-parties/:id/link-bundle — link a generated bundle to a submission */
+  linkBundleToFutureParty: (auth: string, id: number, bundlePublicId: string) =>
+    adminRequest<AdminFutureParty>(`/admin/api/future-parties/${id}/link-bundle`, auth, {
+      method: 'PATCH',
+      body: JSON.stringify({ bundlePublicId }),
+    }),
+
+  /** POST /admin/api/future-parties/:id/send-link — trigger the personalised email */
+  sendFuturePartyLink: (auth: string, id: number) =>
+    adminRequest<{ sentAt: string }>(`/admin/api/future-parties/${id}/send-link`, auth, {
+      method: 'POST',
     }),
 
   /** Step 1: get a presigned PUT URL + final public URL from the backend. */

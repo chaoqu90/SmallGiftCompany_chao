@@ -19,6 +19,7 @@ export function AdminNav() {
         { to: '/admin/bundles', label: 'Bundles' },
         { to: '/admin/dashboard', label: 'Dashboard' },
         { to: '/admin/orders', label: 'Orders' },
+        { to: '/admin/future-parties', label: 'Future Parties' },
       ].map(({ to, label }) => (
         <Link key={to} to={to} style={{ color: '#aaa', textDecoration: 'none', fontSize: '0.875rem' }}>{label}</Link>
       ))}

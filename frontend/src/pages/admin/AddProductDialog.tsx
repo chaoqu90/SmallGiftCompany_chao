@@ -49,7 +49,7 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
   const [maxAge,      setMaxAge]      = useState('12')
 
   // Image upload state
-  const [imageFile,      setImageFile]      = useState<File | null>(null)
+  const [_imageFile,     setImageFile]      = useState<File | null>(null)
   const [imagePreview,   setImagePreview]   = useState<string | null>(null)
   const [imagePublicUrl, setImagePublicUrl] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)

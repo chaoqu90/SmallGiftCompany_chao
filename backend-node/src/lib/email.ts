@@ -107,6 +107,100 @@ function buildHtml(order: OrderEmailData): string {
   `;
 }
 
+// ─── Future Party Email (FEAT-004) ───────────────────────────────────────────
+
+/**
+ * Data required to send a personalised bundle link to a future party parent.
+ * Requirements: AC6.4, design.md §3.6
+ */
+export interface FuturePartyEmailData {
+  toEmail:   string;
+  partyDate: string;   // 'YYYY-MM-DD'
+  kidGender: 'BOY' | 'GIRL' | 'MIXED';
+  bundleUrl: string;
+}
+
+const genderLabel: Record<FuturePartyEmailData['kidGender'], string> = {
+  BOY:   'boy',
+  GIRL:  'girl',
+  MIXED: 'mixed-age group',
+};
+
+const dateFormatter = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
+
+function buildFuturePartyHtml(data: FuturePartyEmailData): string {
+  const label = genderLabel[data.kidGender];
+  // new Date('YYYY-MM-DD') parses as UTC midnight; add T00:00 to get local day
+  const formattedDate = dateFormatter.format(new Date(`${data.partyDate}T00:00`));
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+  <h2 style="color:#F47F6B;">Your Goodie Bag is Ready!</h2>
+  <p>We've curated a personalised goodie bag for your <strong>${label}</strong>
+     kid's party on <strong>${formattedDate}</strong>.</p>
+  <p style="text-align:center;margin:32px 0;">
+    <a href="${data.bundleUrl}"
+       style="background:#F47F6B;color:#fff;padding:14px 28px;border-radius:16px;
+              text-decoration:none;font-weight:600;font-size:1rem;">
+      View Your Bundle
+    </a>
+  </p>
+  <p style="color:#666;font-size:14px;">
+    Or copy this link into your browser:<br>
+    <a href="${data.bundleUrl}">${data.bundleUrl}</a>
+  </p>
+  <hr style="margin:24px 0;">
+  <p style="color:#999;font-size:12px;">It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.</p>
+</body>
+</html>`;
+}
+
+function buildFuturePartyText(data: FuturePartyEmailData): string {
+  const label = genderLabel[data.kidGender];
+  const formattedDate = dateFormatter.format(new Date(`${data.partyDate}T00:00`));
+
+  return [
+    "Your Goodie Bag is Ready!",
+    "",
+    `We've curated a personalised goodie bag for your ${label} kid's party on ${formattedDate}.`,
+    "",
+    `View your bundle here: ${data.bundleUrl}`,
+    "",
+    "It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.",
+  ].join('\n');
+}
+
+/**
+ * Sends a personalised bundle link email to a future party parent.
+ *
+ * IMPORTANT: This function does NOT swallow errors (unlike sendOrderConfirmation).
+ * If SES fails, the error propagates to the route handler which returns HTTP 500
+ * so the admin knows the email was not sent and can retry.
+ *
+ * Requirements: AC6.3, AC6.4, AC6.5
+ * Design: specs/future-party/design.md §3.6, §6
+ */
+export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<void> {
+  const from = process.env.EMAIL_FROM ?? 'orders@example.com';
+
+  await sesClient.send(new SendEmailCommand({
+    Destination: { ToAddresses: [data.toEmail] },
+    Source: from,
+    Message: {
+      Subject: { Data: 'Your personalised goodie bag is ready!', Charset: 'UTF-8' },
+      Body: {
+        Html: { Data: buildFuturePartyHtml(data), Charset: 'UTF-8' },
+        Text: { Data: buildFuturePartyText(data), Charset: 'UTF-8' },
+      },
+    },
+  }));
+  // No try/catch — errors propagate to the admin route handler (AC6.5).
+}
+
 export async function sendOrderConfirmation(order: OrderEmailData): Promise<void> {
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
 

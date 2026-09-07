@@ -10,6 +10,7 @@ import { AdminBundlesPage }        from './pages/admin/AdminBundlesPage'
 import { AdminDashboardPage }      from './pages/admin/AdminDashboardPage'
 import { AdminOrdersPage }         from './pages/admin/AdminOrdersPage'
 import { AdminOrderDetailPage }    from './pages/admin/AdminOrderDetailPage'
+import { AdminFuturePartiesPage }  from './pages/admin/AdminFuturePartiesPage'
 // User-management routes (FEAT-001)
 import { LoginPage }                    from './pages/LoginPage'
 import { RegisterPage }                 from './pages/RegisterPage'
@@ -93,6 +94,7 @@ function App() {
           <Route path="/admin/dashboard"       element={<AdminDashboardPage />} />
           <Route path="/admin/orders"          element={<AdminOrdersPage />} />
           <Route path="/admin/orders/:publicId" element={<AdminOrderDetailPage />} />
+          <Route path="/admin/future-parties"  element={<AdminFuturePartiesPage />} />
         </Route>
       </Route>
     </Routes>
