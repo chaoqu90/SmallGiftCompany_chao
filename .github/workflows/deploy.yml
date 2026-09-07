@@ -77,11 +77,14 @@ jobs:
         run: npm run build
 
       # Copy built bundle into infra/ so serverless.yml can reference it
-      # without a relative '../' path (rejected by Lambda Node.js 22 runtime)
+      # without a relative '../' path (rejected by Lambda Node.js 22 runtime).
+      # The package.json {"type":"module"} is required so Lambda's Node.js 22
+      # runtime treats the ESM bundle as a module, not CommonJS.
       - name: Copy Lambda bundle to infra/dist
         run: |
           mkdir -p infra/dist
           cp backend-node/dist/lambda.js infra/dist/lambda.js
+          echo '{"type":"module"}' > infra/dist/package.json
 
       - name: Install Serverless Framework
         run: npm install -g serverless@3
