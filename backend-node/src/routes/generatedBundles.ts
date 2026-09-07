@@ -85,15 +85,11 @@ generatedBundlesRouter.post(
       // The endpoint remains public — userId is null for anonymous requests.
       const userId = await tryExtractUserId(req);
       const { response, snapshot, templateCode } = await bundleGenerationService.generate(parsed, productionRepos, userId);
-      // Admin requests (Basic auth) save to DB immediately.
-      // Public requests store the snapshot in the in-memory cache only — DB write
-      // is deferred to checkout time (frontend-memory cart design).
-      const isAdmin = req.headers.authorization?.startsWith('Basic ') ?? false;
-      if (isAdmin) {
-        await saveBundle(snapshot);
-      } else {
-        putBundle(snapshot.publicId, snapshot, templateCode);
-      }
+      // Always persist to DB immediately — Lambda statelessness means the in-memory
+      // cache is unreliable across invocations (checkout hits a different instance).
+      // Also keep in-memory cache for fast same-instance retrieval (GET endpoint).
+      await saveBundle(snapshot);
+      putBundle(snapshot.publicId, snapshot, templateCode);
       res.status(201).json(response);
     } catch (err) {
       next(err);

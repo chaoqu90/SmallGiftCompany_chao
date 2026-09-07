@@ -10,22 +10,22 @@
 This feature adds a shopping cart and order tracking layer on top of the existing immutable bundle snapshot model. Key decisions:
 
 - **Cart lives entirely in the browser** — cart items (bundle snapshots + user choices) are stored in `localStorage` + React context. No DB writes until the user proceeds to checkout. No backend cart API calls for add/update/remove operations.
-- **Bundles are NOT saved to DB on generation (public flow)** — `POST /api/generated-bundles` keeps the snapshot in an in-memory cache only. The bundle snapshot is passed to the browser via the 201 response and cached in `sessionStorage`. DB persistence is deferred to checkout time.
-- **Admin-generated bundles ARE saved to DB immediately** — when the request carries an `Authorization: Basic` header (admin flow), the bundle is persisted right away because it will be linked to a future party submission and emailed as a permanent link.
-- **All DB writes happen at `POST /api/checkout/intent`** — when the user clicks "Continue to Payment", the frontend sends the full cart (bundle snapshots + choices) in the request body. The server saves each bundle to DB, saves `cart_item` rows keyed by `session_id`, then creates the Stripe PaymentIntent. This is the single commit point before payment.
+- **Bundles are always saved to DB on generation** — `POST /api/generated-bundles` persists the snapshot immediately for both public and admin requests. Lambda statelessness means the in-memory cache cannot be relied on across invocations (checkout frequently hits a different Lambda instance). The bundle snapshot is also kept in the in-memory cache for fast same-instance `GET` retrieval.
+- **Cart items remain local until checkout** — `cart_item` rows are only written to the DB when the user clicks "Continue to Payment". Cart add/update/remove during browsing are all localStorage operations with no backend calls.
+- **DB writes at `POST /api/checkout/intent`** — the server looks up each bundle by `public_id` (guaranteed to be in DB), upserts `cart_item` rows keyed by `session_id`, then creates the Stripe PaymentIntent.
 - **Stripe webhook creates the order** — after payment confirmation, the webhook reads `cart_item` from DB by `session_id` (already persisted at intent time), creates `customer_order` + `order_line_item` rows atomically, and clears the cart.
 - **Orders identified by email** — customer email is collected at checkout. No account required. The email address is the primary identifier for anonymous orders.
 - **Logged-in users get order history** — if a user is signed in at checkout time, their `user_id` is also stored on the order.
 - **Users can pick any active gift bag option** in the cart, not just the one pre-generated with the bundle.
 - **Prices computed client-side for display, server-side for billing** — the `GeneratedBundleResponse` carries all pricing fields (`bundleRetailPrice`, `upgrade.standardRetailAdjustment`, `upgrade.upgradedRetailAdjustment`, `giftBag.retailPriceAdjustment`). The CartPage computes display prices locally. The server re-computes authoritatively at checkout intent time — the client-sent price is never trusted.
 
-**Design principle:** Zero DB writes for browsing and cart management. The commit point is the checkout intent — at that moment the user has expressed intent to pay, so persisting their cart is justified. Abandoned sessions leave no DB footprint.
+**Design principle:** Zero DB writes for cart management (add/update/remove). Bundles are persisted immediately on generation because Lambda statelessness makes in-memory-only storage unreliable across invocations. The cart itself (item choices, quantities) is localStorage-only until checkout. Abandoned sessions leave bundle rows but no cart rows in the DB.
 
 ### DB write timeline
 
 | User action | DB write? |
 |---|---|
-| Generate bundle (public) | No — in-memory cache + sessionStorage |
+| Generate bundle (public) | Yes — immediately (Lambda statelessness requires DB persistence) |
 | Generate bundle (admin Basic auth) | Yes — immediately |
 | Add to cart | No — localStorage only |
 | Update/remove cart item | No — localStorage only |
@@ -169,7 +169,7 @@ Body: {
   email, name?, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry,
   items: [
     {
-      bundleSnapshot: GeneratedBundleSnapshot,  // full snapshot from sessionStorage
+      bundlePublicId: string,          // public_id of the already-persisted bundle
       upgradeTier: 'STANDARD' | 'PREMIUM',
       giftBagOptionId: number | null,
       quantity: number
@@ -177,10 +177,9 @@ Body: {
   ]
 }
 
-1. For each item.bundleSnapshot:
-   - Call saveBundle(snapshot) with ON CONFLICT (public_id) DO NOTHING
-     (idempotent — safe to retry if payment fails and user tries again)
-   - Returns the DB row id
+1. For each item.bundlePublicId:
+   - Look up the bundle by public_id (always present in DB since generation persists immediately)
+   - Returns the internal DB id
 
 2. Upsert cart_item rows (ON CONFLICT (session_id, generated_bundle_id) DO UPDATE)
 

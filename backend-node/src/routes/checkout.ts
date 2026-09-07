@@ -16,8 +16,6 @@ import { z } from 'zod';
 import { jwtVerify } from 'jose';
 import { stripe } from '../lib/stripe.js';
 import { getCartWithDetails, upsertCartItemExact, findBundleIdByPublicId } from '../repositories/cart.js';
-import { saveBundleIdempotent } from '../repositories/generatedBundles.js';
-import { getBundle, evictBundle } from '../lib/bundleCache.js';
 
 export const checkoutRouter = Router();
 
@@ -77,31 +75,19 @@ checkoutRouter.post(
       }
       const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
 
-      // Persist bundles from in-memory cache to DB, then upsert cart_item rows.
-      // The frontend sends only bundlePublicId; the full snapshot is held in the
-      // Lambda in-memory cache from the earlier generate call. If the Lambda
-      // restarted (cache miss), fall back to a DB lookup.
+      // Bundles are always saved to DB at generation time, so a simple lookup
+      // by public_id is sufficient. No in-memory cache dependency here.
       for (const item of items) {
-        let bundleDbId: number;
-        const cached = getBundle(item.bundlePublicId);
-        if (cached) {
-          const savedRow = await saveBundleIdempotent(cached.snapshot);
-          evictBundle(item.bundlePublicId);
-          bundleDbId = savedRow.id;
-        } else {
-          // Cache miss — bundle was either already saved (retry) or Lambda restarted
-          const foundId = await findBundleIdByPublicId(item.bundlePublicId);
-          if (!foundId) {
-            res.status(422).json({
-              type: 'about:validation-error',
-              title: 'Bundle not found',
-              status: 422,
-              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
-              instance: req.path,
-            });
-            return;
-          }
-          bundleDbId = foundId;
+        const bundleDbId = await findBundleIdByPublicId(item.bundlePublicId);
+        if (!bundleDbId) {
+          res.status(422).json({
+            type: 'about:validation-error',
+            title: 'Bundle not found',
+            status: 422,
+            detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+            instance: req.path,
+          });
+          return;
         }
 
         // Use exact-quantity upsert (not additive) — checkout retries must not
