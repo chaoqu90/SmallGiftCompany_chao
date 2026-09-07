@@ -18,7 +18,9 @@
     "migrate:status": "node-pg-migrate --tsx status",
     "migrate:local": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx up",
     "migrate:local:down": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx down",
-    "migrate:local:status": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx status"
+    "migrate:local:status": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx status",
+    "cleanup-bundles": "node --env-file=.env ./node_modules/.bin/tsx scripts/cleanup-old-bundles.ts",
+    "cleanup-bundles:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/cleanup-old-bundles.ts --force"
   },
   "node-pg-migrate": {
     "migrationsTable": "pgmigrations",
