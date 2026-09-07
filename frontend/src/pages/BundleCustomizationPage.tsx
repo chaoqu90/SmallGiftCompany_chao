@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, CircularProgress, Container, Grid2, MenuItem, Select, Stack, Typography,
+  Box, Button, CircularProgress, Container, Grid2, MenuItem, Select, Stack, Typography,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { getGeneratedBundle } from '../api/generatedBundles'
