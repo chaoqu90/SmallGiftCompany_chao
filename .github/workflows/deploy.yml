@@ -15,6 +15,10 @@ name: Deploy
 #   AWS_ACCESS_KEY_ID        — IAM user key (needs Lambda, API GW, S3, CloudFront, CFn)
 #   AWS_SECRET_ACCESS_KEY    — IAM user secret
 #   SUPABASE_JWT_SECRET      — JWT secret from Supabase dashboard (Project Settings → API)
+#   STRIPE_SECRET_KEY        — Stripe secret key (sk_live_... or sk_test_...)
+#   STRIPE_WEBHOOK_SECRET    — Stripe webhook signing secret (whsec_...) for signature verification
+#   EMAIL_FROM               — SES-verified sender address (e.g. orders@smallgift.shop)
+#   FRONTEND_URL             — Public frontend URL used in email links (https://www.smallgift.shop)
 #
 # GitHub Variables required (Settings → Secrets and variables → Actions → Variables):
 #   FRONTEND_DOMAIN       — www.smallgift.shop
@@ -41,6 +45,9 @@ jobs:
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+      STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
       # GitHub Actions Variables (non-sensitive — visible in logs)
       FRONTEND_DOMAIN: ${{ vars.FRONTEND_DOMAIN }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}

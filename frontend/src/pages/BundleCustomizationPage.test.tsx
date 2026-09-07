@@ -8,9 +8,14 @@ import * as generatedBundlesApi from '../api/generatedBundles'
 import type { GeneratedBundleResponse } from '../types/catalog'
 
 vi.mock('../contexts/CartContext', () => ({
-  useCart: () => ({ sessionId: 'test-session', cartCount: 0, refreshCart: vi.fn(), setCartCount: vi.fn() }),
+  useCart: () => ({ sessionId: 'test-session', cartCount: 0, addItem: vi.fn(), refreshCart: vi.fn(), setCartCount: vi.fn() }),
   CartProvider: ({ children }: { children: React.ReactNode }) => children,
 }))
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
+  return { ...actual, useNavigate: () => vi.fn() }
+})
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -265,13 +270,13 @@ describe('BundleCustomizationPage — Continue button', () => {
   it('clicking Continue shows confirmation and hides the button', async () => {
     await setup()
     fireEvent.click(screen.getByTestId('continue-btn'))
-    expect(screen.getByTestId('continue-confirmation')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('continue-confirmation')).toBeInTheDocument())
     expect(screen.queryByTestId('continue-btn')).not.toBeInTheDocument()
   })
 
   it('confirmation shows saved message', async () => {
     await setup()
     fireEvent.click(screen.getByTestId('continue-btn'))
-    expect(screen.getByTestId('continue-confirmation')).toHaveTextContent(/your selection is saved/i)
+    await waitFor(() => expect(screen.getByTestId('continue-confirmation')).toHaveTextContent(/your selection is saved/i))
   })
 })
