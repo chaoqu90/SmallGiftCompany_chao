@@ -1,6 +1,10 @@
 /**
  * cleanup-old-bundles.ts
  *
+ * The script always does a dry run by default and lists every bundle with its age before doing anything. It only deletes when you explicitly pass --force. Child rows
+ *  (generated_bundle_item, generated_bundle_upgrade, generated_bundle_gift_bag, cart_item) are removed automatically via ON DELETE CASCADE. Bundles linked to any order are
+ *  never touched (NOT EXISTS on order_line_item).
+
  * Deletes generated bundles that:
  *   1. Were created more than 30 days ago, AND
  *   2. Have no associated order (i.e. not referenced in order_line_item)
