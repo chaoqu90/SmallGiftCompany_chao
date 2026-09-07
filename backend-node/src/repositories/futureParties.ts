@@ -21,6 +21,7 @@ export interface FuturePartyRow {
   submitted_at:           string;
   linked_bundle_public_id: string | null;
   bundle_sent_at:         string | null;
+  source:                 string | null;   // FEAT-005 — 'signup-promotion' or NULL
 }
 
 export interface InsertFuturePartyData {
@@ -28,6 +29,7 @@ export interface InsertFuturePartyData {
   partyDate: string;  // YYYY-MM-DD
   kidGender: string;  // BOY | GIRL | MIXED
   kidAge:    number;
+  source:    string | null;  // FEAT-005 — 'signup-promotion' or null
 }
 
 // ─── insertFutureParty ────────────────────────────────────────────────────────
@@ -38,8 +40,8 @@ export interface InsertFuturePartyData {
  */
 export async function insertFutureParty(data: InsertFuturePartyData): Promise<FuturePartyRow> {
   const rows = await sql<FuturePartyRow[]>`
-    INSERT INTO future_parties (email, party_date, kid_gender, kid_age)
-    VALUES (${data.email}, ${data.partyDate}, ${data.kidGender}, ${data.kidAge})
+    INSERT INTO future_parties (email, party_date, kid_gender, kid_age, source)
+    VALUES (${data.email}, ${data.partyDate}, ${data.kidGender}, ${data.kidAge}, ${data.source})
     RETURNING *
   `;
   return rows[0];

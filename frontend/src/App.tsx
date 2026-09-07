@@ -60,6 +60,7 @@ function App() {
       <Route element={<RootLayout />}>
         {/* Public routes */}
         <Route path="/"                              element={<HomePage />} />
+        <Route path="/build"                         element={<HomePage />} />   {/* FEAT-005 AC5.1, AC5.2 — signup promotion path */}
         <Route path="/bundleCustomization/:bundleId" element={<BundleCustomizationPage />} />
 
         {/* User auth routes (FEAT-001) */}

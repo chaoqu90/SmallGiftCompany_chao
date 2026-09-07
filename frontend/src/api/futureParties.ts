@@ -13,6 +13,7 @@ export interface FuturePartySubmission {
   partyDate: string          // YYYY-MM-DD
   kidGender: 'BOY' | 'GIRL' | 'MIXED'
   kidAge:    number
+  source?:   'signup-promotion'   // FEAT-005 AC4.2 — omitted for Plan-For-Future submissions
 }
 
 export interface FuturePartyResponse {
@@ -24,6 +25,7 @@ export interface FuturePartyResponse {
   submittedAt:          string
   linkedBundlePublicId: string | null
   bundleSentAt:         string | null
+  source?:              string | null   // FEAT-005 — present when submitted via /build
 }
 
 /**

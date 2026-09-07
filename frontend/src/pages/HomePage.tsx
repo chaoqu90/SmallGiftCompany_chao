@@ -3,11 +3,13 @@ import { useLocation } from 'react-router-dom'
 import { Box, Button, Container, Stack, Typography } from '@mui/material'
 import { GiftFinder } from '../components/GiftFinder'
 import { FuturePartyModal } from '../components/FuturePartyModal'
+import { SignupPromotionModal } from '../components/SignupPromotionModal'
 import { COLORS } from '../theme'
 
 export function HomePage() {
-  const { hash } = useLocation()
+  const { hash, pathname } = useLocation()
   const [futurePartyOpen, setFuturePartyOpen] = useState(false)
+  const [promotionOpen, setPromotionOpen] = useState(false)
 
   useEffect(() => {
     if (hash === '#finder') {
@@ -18,6 +20,17 @@ export function HomePage() {
       }
     }
   }, [hash])
+
+  // FEAT-005 AC1.1 — auto-open the signup promotion modal on /build only.
+  // Dependency array [pathname] ensures the effect fires once on mount when
+  // pathname is /build and does not re-run on hash changes.
+  // The modal will not reopen after close because setPromotionOpen(false)
+  // does not change pathname — the effect does not re-execute (AC1.5).
+  useEffect(() => {
+    if (pathname === '/build') {
+      setPromotionOpen(true)
+    }
+  }, [pathname])
   return (
     <Box sx={{ backgroundColor: COLORS.cream, minHeight: '100vh' }}>
       {/* Hero */}
@@ -131,8 +144,11 @@ export function HomePage() {
         </Container>
       </Box>
 
-      {/* Future Party registration modal (AC1.3, AC1.4) */}
+      {/* Future Party registration modal — triggered by "PLAN FOR FUTURE" button (FEAT-004 AC1.3) */}
       <FuturePartyModal open={futurePartyOpen} onClose={() => setFuturePartyOpen(false)} />
+
+      {/* Signup promotion modal — auto-opens on /build (FEAT-005 AC1.1) */}
+      <SignupPromotionModal open={promotionOpen} onClose={() => setPromotionOpen(false)} />
     </Box>
   )
 }

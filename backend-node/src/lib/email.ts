@@ -201,6 +201,90 @@ export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<
   // No try/catch — errors propagate to the admin route handler (AC6.5).
 }
 
+// ─── Signup Promotion Email (FEAT-005) ────────────────────────────────────────
+
+/**
+ * Data required to send a gift-redemption confirmation to a /build signup visitor.
+ * Requirements: FEAT-005 AC4.3–AC4.6
+ * Design: specs/signup-promotion/design.md §3.3
+ */
+export interface SignupPromotionEmailData {
+  toEmail: string;
+}
+
+function buildSignupPromotionHtml(_data: SignupPromotionEmailData): string {
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
+  <h2 style="color:#F47F6B;">Thank you for signing up!</h2>
+  <p>We're so grateful for your support during our early launch phase!</p>
+  <p>We'd love to share a small surprise gift with you as a thank-you.
+     Come find us at our booth at the <strong>Loudoun Children's Business Fair</strong>:</p>
+  <ul style="line-height:1.8;">
+    <li><strong>Date:</strong> Saturday, September 12, 2026</li>
+    <li><strong>Time:</strong> 11 AM – 3 PM</li>
+  </ul>
+  <p>Show this email (or just mention Small Gift Shop) at our booth to collect your
+     surprise gift. We can't wait to see you there!</p>
+  <hr style="margin:24px 0;">
+  <p style="color:#999;font-size:12px;">It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.</p>
+</body>
+</html>`;
+}
+
+function buildSignupPromotionText(_data: SignupPromotionEmailData): string {
+  return [
+    "Thank you for signing up!",
+    "",
+    "We're so grateful for your support during our early launch phase!",
+    "",
+    "We'd love to share a small surprise gift with you as a thank-you.",
+    "Come find us at our booth at the Loudoun Children's Business Fair:",
+    "",
+    "  Date: Saturday, September 12, 2026",
+    "  Time: 11 AM – 3 PM",
+    "",
+    "Show this email (or just mention Small Gift Shop) at our booth to collect your",
+    "surprise gift. We can't wait to see you there!",
+    "",
+    "It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.",
+  ].join('\n');
+}
+
+/**
+ * Sends a gift-redemption confirmation email to a visitor who signed up via
+ * the /build promotion modal.
+ *
+ * IMPORTANT: This function swallows SES errors (unlike sendFuturePartyEmail
+ * which re-throws). Email failure must NOT block the 201 submission response.
+ *
+ * Requirements: FEAT-005 AC4.1, AC4.3–AC4.6
+ * Design: specs/signup-promotion/design.md §3.3
+ */
+export async function sendSignupPromotionEmail(data: SignupPromotionEmailData): Promise<void> {
+  const from = process.env.EMAIL_FROM ?? 'orders@example.com';
+  try {
+    await sesClient.send(new SendEmailCommand({
+      Destination: { ToAddresses: [data.toEmail] },
+      Source: from,
+      Message: {
+        Subject: {
+          Data: "You're signed up — see you at the Loudoun Children's Business Fair!",
+          Charset: 'UTF-8',
+        },
+        Body: {
+          Html: { Data: buildSignupPromotionHtml(data), Charset: 'UTF-8' },
+          Text: { Data: buildSignupPromotionText(data), Charset: 'UTF-8' },
+        },
+      },
+    }));
+  } catch (err) {
+    // Email failure must not block the 201 response (AC4.6).
+    console.warn('[email] Failed to send signup-promotion email to', data.toEmail, ':', err);
+  }
+}
+
 export async function sendOrderConfirmation(order: OrderEmailData): Promise<void> {
   const from = process.env.EMAIL_FROM ?? 'orders@example.com';
 

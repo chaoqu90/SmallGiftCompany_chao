@@ -211,6 +211,14 @@ export const FuturePartyRequestSchema = z.object({
 
   /** Kid age — required, integer 1–12 inclusive */
   kidAge:    z.number().int().min(1).max(12),
+
+  /**
+   * Submission source — optional.
+   * Present only when submitted via the /build signup-promotion modal (FEAT-005).
+   * Absent for Plan-For-Future button submissions; those are unaffected.
+   * Requirements: FEAT-005 AC4.2
+   */
+  source:    z.literal('signup-promotion').optional(),
 });
 
 export type FuturePartyRequest = z.infer<typeof FuturePartyRequestSchema>;

@@ -12,6 +12,7 @@ import {
   insertFutureParty,
   type FuturePartyRow,
 } from '../repositories/futureParties.js';
+import { sendSignupPromotionEmail } from '../lib/email.js';
 
 export const futurePartiesRouter = Router();
 
@@ -27,6 +28,7 @@ export function toFuturePartyDto(row: FuturePartyRow) {
     submittedAt:          row.submitted_at,
     linkedBundlePublicId: row.linked_bundle_public_id,
     bundleSentAt:         row.bundle_sent_at,
+    source:               row.source,         // FEAT-005 AC4.2
   };
 }
 
@@ -52,15 +54,25 @@ futurePartiesRouter.post(
         return;
       }
 
-      // 3. Persist
+      // 3. Persist (pass source through to the repository — FEAT-005 design.md §3.2)
       const row = await insertFutureParty({
         email:     parsed.email,
         partyDate: parsed.partyDate,
         kidGender: parsed.kidGender,
         kidAge:    parsed.kidAge,
+        source:    parsed.source ?? null,
       });
 
-      // 4. Respond
+      // 4. Signup-promotion email — fire-and-forget (FEAT-005 AC4.1, AC4.6)
+      // Intentionally NOT awaited — the 201 response is returned immediately.
+      // sendSignupPromotionEmail swallows SES errors internally with console.warn.
+      if (parsed.source === 'signup-promotion') {
+        sendSignupPromotionEmail({ toEmail: parsed.email }).catch(() => {
+          // Already logged inside sendSignupPromotionEmail (AC4.6)
+        });
+      }
+
+      // 5. Respond
       res.status(201).json(toFuturePartyDto(row));
     } catch (err) {
       next(err);
