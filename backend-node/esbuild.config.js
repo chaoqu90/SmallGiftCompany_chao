@@ -7,8 +7,9 @@ await build({
   target: 'node22',
   format: 'esm',
   outfile: 'dist/lambda.js',
-  // postgres.js uses native ESM and dynamic imports — do not bundle it
-  external: ['postgres'],
+  // Bundle all dependencies into the single lambda.js output so Lambda
+  // doesn't need node_modules present at runtime.
+  external: [],
   // Minify for faster cold starts
   minify: false,
   sourcemap: true,
