@@ -15,7 +15,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod';
 import { jwtVerify } from 'jose';
 import { stripe } from '../lib/stripe.js';
-import { getCartWithDetails, upsertCartItemExact, findBundleIdByPublicId } from '../repositories/cart.js';
+import { getCartWithDetails, upsertCartItemExact, findBundleIdByPublicId, clearCart } from '../repositories/cart.js';
 
 export const checkoutRouter = Router();
 
@@ -74,6 +74,11 @@ checkoutRouter.post(
         return;
       }
       const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
+
+      // Clear any stale cart_item rows for this session before writing the
+      // current cart. Without this, items from a previous checkout attempt
+      // (different bundles) accumulate and inflate the total.
+      await clearCart(sid);
 
       // Bundles are always saved to DB at generation time, so a simple lookup
       // by public_id is sufficient. No in-memory cache dependency here.
