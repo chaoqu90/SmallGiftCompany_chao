@@ -92,23 +92,26 @@ docker --version  # Docker version 2x.x.x
 
 | Variable | Description | Where to Set | Example Value |
 |----------|-------------|--------------|---------------|
-| `DATABASE_URL` | Supabase PostgreSQL connection string. Must use transaction-mode pooler (port 6543). | GitHub Secret | `postgres://postgres.abcdef:pw@aws-us-east-1.pooler.supabase.com:6543/postgres` |
-| `CORS_ALLOWED_ORIGIN` | CloudFront domain for the frontend (e.g. `https://d1abc.cloudfront.net`). No wildcard. On first deploy, use a placeholder — see §4.1.1. | GitHub Secret | `https://d1abc123xyz.cloudfront.net` |
-| `ADMIN_USERNAME` | HTTP Basic auth username for `/admin/api/**` endpoints. | GitHub Secret | `admin` |
 | `ADMIN_PASSWORD` | HTTP Basic auth password for `/admin/api/**` endpoints. | GitHub Secret | (strong password) |
-| `SUPABASE_JWT_SECRET` | JWT secret for verifying Supabase Auth tokens. Found in: Supabase dashboard → Project Settings → API → JWT Secret. | GitHub Secret | (long random string) |
-| `STRIPE_SECRET_KEY` | Stripe secret API key. Use `sk_live_...` in production, `sk_test_...` for staging. | GitHub Secret | `sk_live_...` |
-| `STRIPE_WEBHOOK_SECRET` | Signing secret for verifying Stripe webhook payloads. Get from Stripe Dashboard → Developers → Webhooks → your endpoint → Signing secret. | GitHub Secret | `whsec_...` |
+| `ADMIN_USERNAME` | HTTP Basic auth username for `/admin/api/**` endpoints. | GitHub Secret | `admin` |
+| `AWS_ACCESS_KEY_ID` | IAM user access key with Lambda, API Gateway, CloudFormation, S3, CloudFront, and CloudWatch Logs permissions. | GitHub Secret | `AKIA...` |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key. | GitHub Secret | (secret) |
+| `CORS_ALLOWED_ORIGIN` | CloudFront domain for the frontend (e.g. `https://d1abc.cloudfront.net`). No wildcard. On first deploy, use a placeholder — see §4.1.1. | GitHub Secret | `https://d1abc123xyz.cloudfront.net` |
+| `DATABASE_URL` | Supabase PostgreSQL connection string. Must use transaction-mode pooler (port 6543). | GitHub Secret | `postgres://postgres.abcdef:pw@aws-us-east-1.pooler.supabase.com:6543/postgres` |
 | `EMAIL_FROM` | Verified sender address used in confirmation emails. Must be verified in AWS SES Identities. | GitHub Secret | `orders@smallgift.shop` |
 | `FRONTEND_URL` | The public frontend URL, included in email confirmation links. | GitHub Secret | `https://www.smallgift.shop` |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key, embedded into the frontend bundle at build time. Use `pk_live_...` in production. | GitHub Secret (used in build step) | `pk_live_...` |
-| `VITE_API_BASE_URL` | The API Gateway URL, embedded into the frontend bundle at build time. Set automatically during CI/CD from CloudFormation outputs — do not set this as a GitHub Secret or Variable. | CI/CD only (set automatically from CloudFormation outputs) | `https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com` |
-| `FRONTEND_DOMAIN` | The custom domain for the frontend. Passed to `serverless.yml` as the CloudFront `Aliases` entry. Not sensitive. | GitHub **Variable** (not secret) | `www.smallgift.shop` |
-| `ACM_CERTIFICATE_ARN` | ARN of the ACM TLS certificate covering `www.smallgift.shop`. Must be issued in `us-east-1`. Not sensitive. | GitHub **Variable** (not secret) | `arn:aws:acm:us-east-1:...` |
+| `SERVERLESS_ACCESS_KEY` | Serverless Framework access key from the Serverless Dashboard, used to authenticate `serverless deploy`. | GitHub Secret | (from Serverless Dashboard) |
+| `STRIPE_SECRET_KEY` | Stripe secret API key. Use `sk_live_...` in production, `sk_test_...` for staging. | GitHub Secret | `sk_live_...` |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret for verifying Stripe webhook payloads. Get from Stripe Dashboard → Developers → Webhooks → your endpoint → Signing secret. | GitHub Secret | `whsec_...` |
+| `SUPABASE_JWT_SECRET` | JWT secret for verifying Supabase Auth tokens. Found in: Supabase dashboard → Project Settings → API → JWT Secret. | GitHub Secret | (long random string) |
+| `ACM_CERTIFICATE_ARN` | ARN of the ACM TLS certificate covering `www.smallgift.shop`. Must be issued in `us-east-1`. Not sensitive. | GitHub Variable | `arn:aws:acm:us-east-1:...` |
+| `FRONTEND_DOMAIN` | The custom domain for the frontend. Passed to `serverless.yml` as the CloudFront `Aliases` entry. Not sensitive. | GitHub Variable | `www.smallgift.shop` |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key, embedded into the frontend bundle at build time. Use `pk_live_...` in production. | GitHub Variable | `pk_live_...` |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key, embedded into the frontend bundle at build time. Safe to expose in browser JS. | GitHub Variable | (from Supabase dashboard → Project Settings → API) |
+| `VITE_SUPABASE_URL` | Supabase project URL, embedded into the frontend bundle at build time. | GitHub Variable | `https://xyzabc.supabase.co` |
+| `VITE_API_BASE_URL` | The API Gateway URL, embedded into the frontend bundle at build time. Set automatically during CI/CD from CloudFormation outputs — do not set this as a GitHub Secret or Variable. | CI/CD only (auto from CloudFormation) | `https://YOUR-API-ID.execute-api.us-east-1.amazonaws.com` |
 | `PRODUCT_IMAGES_BUCKET` | S3 bucket name for product images. Injected automatically via `!Ref ProductImagesBucket` in `serverless.yml` — **do not set this manually**. | `serverless.yml` (automatic) | (CloudFormation-generated) |
 | `NODE_ENV` | Runtime environment. Set automatically by `serverless.yml` to `production` for Lambda. | `serverless.yml` (automatic) | `production` |
-| `AWS_ACCESS_KEY_ID` | IAM user access key with Lambda, API Gateway, CloudFormation, S3, CloudFront, and CloudWatch Logs permissions. | GitHub Secret only | `AKIA...` |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret key. | GitHub Secret only | (secret) |
 
 ### 3.2 GitHub Actions Secrets Setup
 
@@ -124,25 +127,28 @@ All secrets must be configured in the GitHub repository for the deploy pipeline 
 
 | Secret Name | Value |
 |-------------|-------|
-| `DATABASE_URL` | Supabase transaction-mode connection string (port 6543) |
-| `CORS_ALLOWED_ORIGIN` | `https://www.smallgift.shop` |
-| `ADMIN_USERNAME` | Admin username for HTTP Basic auth |
 | `ADMIN_PASSWORD` | Admin password for HTTP Basic auth |
-| `SUPABASE_JWT_SECRET` | JWT secret from Supabase dashboard → Project Settings → API → JWT Secret |
-| `STRIPE_SECRET_KEY` | Stripe live secret key (`sk_live_...`) |
-| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (`whsec_...`) — see §9.3 |
-| `EMAIL_FROM` | Verified sender address in AWS SES (e.g. `orders@smallgift.shop`) — see §9.5 |
-| `FRONTEND_URL` | `https://www.smallgift.shop` |
-| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe live publishable key (`pk_live_...`) — embedded in the frontend build |
+| `ADMIN_USERNAME` | Admin username for HTTP Basic auth |
 | `AWS_ACCESS_KEY_ID` | IAM access key ID |
 | `AWS_SECRET_ACCESS_KEY` | IAM secret access key |
+| `CORS_ALLOWED_ORIGIN` | `https://www.smallgift.shop` |
+| `DATABASE_URL` | Supabase transaction-mode connection string (port 6543) |
+| `EMAIL_FROM` | Verified sender address in AWS SES (e.g. `orders@smallgift.shop`) — see §9.5 |
+| `FRONTEND_URL` | `https://www.smallgift.shop` |
+| `SERVERLESS_ACCESS_KEY` | Serverless Framework access key (from Serverless Dashboard) |
+| `STRIPE_SECRET_KEY` | Stripe live secret key (`sk_live_...`) |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (`whsec_...`) — see §9.3 |
+| `SUPABASE_JWT_SECRET` | JWT secret from Supabase dashboard → Project Settings → API → JWT Secret |
 
 **Variables** (Settings → Secrets and variables → Actions → **Variables** tab — not sensitive, visible in workflow logs):
 
 | Variable Name | Value |
 |---------------|-------|
-| `FRONTEND_DOMAIN` | `www.smallgift.shop` |
 | `ACM_CERTIFICATE_ARN` | `arn:aws:acm:us-east-1:YOUR_ACCOUNT_ID:certificate/YOUR_CERT_UUID` |
+| `FRONTEND_DOMAIN` | `www.smallgift.shop` |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Stripe live publishable key (`pk_live_...`) — embedded in the frontend build |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon/public key (safe to embed in browser JS) |
+| `VITE_SUPABASE_URL` | Supabase project URL (e.g. `https://xyzabc.supabase.co`) |
 
 > **Note:** `VITE_API_BASE_URL` does **not** need to be set here. The deploy pipeline reads the API Gateway URL directly from CloudFormation outputs and passes it to the frontend build step automatically.
 

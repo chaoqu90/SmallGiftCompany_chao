@@ -95853,6 +95853,7 @@ checkoutRouter.post(
         return;
       }
       const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
+      await clearCart(sid);
       for (const item of items) {
         const bundleDbId = await findBundleIdByPublicId(item.bundlePublicId);
         if (!bundleDbId) {
