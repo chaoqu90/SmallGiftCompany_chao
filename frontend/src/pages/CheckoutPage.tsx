@@ -237,25 +237,53 @@ export function CheckoutPage() {
               const selectedGiftBag = item.giftBagOptionId != null
                 ? (giftBagOptions.find(o => o.id === item.giftBagOptionId) ?? null)
                 : null
-              const unitPrice = computeUnitPrice(item.bundle, item.upgradeTier, selectedGiftBag)
+              const base = item.bundle.bundleRetailPrice ?? 0
+              const upgradeAdj = item.upgradeTier === 'PREMIUM'
+                ? (item.bundle.upgrade?.upgradedRetailAdjustment ?? 0)
+                : (item.bundle.upgrade?.standardRetailAdjustment ?? 0)
+              const giftBagAdj = selectedGiftBag?.retailPriceAdjustment ?? 0
+              const unitPrice = Math.round((base + upgradeAdj + giftBagAdj) * 100) / 100
               const lineTotal = Math.round(unitPrice * item.quantity * 100) / 100
               const bundleLabel = item.bundle.templateCode
                 .replace(/_/g, ' ')
                 .toLowerCase()
                 .replace(/\b\w/g, c => c.toUpperCase())
               return (
-                <Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={600}>
-                      {bundleLabel}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {item.upgradeTier} · {selectedGiftBag?.name ?? 'No gift bag'} · Qty {item.quantity}
-                    </Typography>
+                <Box key={item.id}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2" fontWeight={600}>{bundleLabel}</Typography>
+                    <Typography variant="body2" fontWeight={600}>{fmt.format(lineTotal)}</Typography>
                   </Box>
-                  <Typography variant="body2" fontWeight={600}>
-                    {fmt.format(lineTotal)}
-                  </Typography>
+                  <Box sx={{ pl: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="caption" color="text.secondary">Base bundle</Typography>
+                      <Typography variant="caption" color="text.secondary">{fmt.format(base)}</Typography>
+                    </Box>
+                    {upgradeAdj !== 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {item.upgradeTier === 'PREMIUM' ? 'Premium upgrade' : 'Standard upgrade'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {upgradeAdj > 0 ? '+' : ''}{fmt.format(upgradeAdj)}
+                        </Typography>
+                      </Box>
+                    )}
+                    {giftBagAdj !== 0 && selectedGiftBag && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="caption" color="text.secondary">{selectedGiftBag.name}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {giftBagAdj > 0 ? '+' : ''}{fmt.format(giftBagAdj)}
+                        </Typography>
+                      </Box>
+                    )}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {fmt.format(unitPrice)} × {item.quantity} bag{item.quantity !== 1 ? 's' : ''}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{fmt.format(lineTotal)}</Typography>
+                    </Box>
+                  </Box>
                 </Box>
               )
             })}

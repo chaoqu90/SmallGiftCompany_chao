@@ -21,11 +21,12 @@ name: Deploy
 #   FRONTEND_URL             — Public frontend URL used in email links (https://www.smallgift.shop)
 #
 # GitHub Variables required (Settings → Secrets and variables → Actions → Variables):
-#   FRONTEND_DOMAIN       — www.smallgift.shop
-#   ACM_CERTIFICATE_ARN   — arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID
-#                           (must be issued in us-east-1; see production-deployment.md §6.2)
-#   VITE_SUPABASE_URL     — Supabase project URL (e.g. https://xyzabc.supabase.co)
-#   VITE_SUPABASE_ANON_KEY — Supabase anon/public key (safe to embed in browser JS)
+#   FRONTEND_DOMAIN          — www.smallgift.shop
+#   ACM_CERTIFICATE_ARN      — arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID
+#                              (must be issued in us-east-1; see production-deployment.md §6.2)
+#   VITE_SUPABASE_URL        — Supabase project URL (e.g. https://xyzabc.supabase.co)
+#   VITE_SUPABASE_ANON_KEY   — Supabase anon/public key (safe to embed in browser JS)
+#   VITE_STRIPE_PUBLISHABLE_KEY — Stripe publishable key (pk_live_... or pk_test_...)
 
 on:
   push:
@@ -162,12 +163,14 @@ jobs:
       # VITE_* variables are embedded at build time by Vite into import.meta.env.
       # VITE_API_BASE_URL points at the API Gateway URL from the backend deploy job.
       # VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY come from GitHub Actions Variables.
+      # VITE_STRIPE_PUBLISHABLE_KEY is the Stripe publishable key (pk_live_... or pk_test_...).
       - name: Build frontend
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ needs.deploy-backend.outputs.api_url }}
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ vars.VITE_STRIPE_PUBLISHABLE_KEY }}
         run: npm run build
 
       - name: Configure AWS credentials
