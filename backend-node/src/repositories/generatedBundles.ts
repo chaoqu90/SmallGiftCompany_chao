@@ -175,6 +175,19 @@ export async function saveBundle(snapshot: BundleSnapshot): Promise<GeneratedBun
 }
 
 /**
+ * Idempotent save: inserts the bundle snapshot if it does not already exist,
+ * or returns the existing row if it does. Safe to call multiple times with the
+ * same snapshot (e.g. on checkout retry after a Lambda restart).
+ */
+export async function saveBundleIdempotent(snapshot: BundleSnapshot): Promise<GeneratedBundleRow> {
+  const existing = await sql<GeneratedBundleRow[]>`
+    SELECT * FROM generated_bundle WHERE public_id = ${snapshot.publicId}
+  `;
+  if (existing.length > 0) return existing[0];
+  return saveBundle(snapshot);
+}
+
+/**
  * Finds a bundle by public_id with full aggregate (items, upgrade, gift bag).
  * Returns null if not found (AC5.2, AC9.3).
  */

@@ -136,6 +136,7 @@ export function AdminFuturePartiesPage() {
                   <TableCell><strong>Age</strong></TableCell>
                   <TableCell><strong>Submitted</strong></TableCell>
                   <TableCell><strong>Bundle Sent</strong></TableCell>
+                  <TableCell><strong>Code</strong></TableCell>
                   <TableCell><strong>Actions</strong></TableCell>
                 </TableRow>
               </TableHead>
@@ -144,7 +145,7 @@ export function AdminFuturePartiesPage() {
                 {/* Empty state (AC4.6) */}
                 {submissions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
                       No future party submissions yet.
                     </TableCell>
                   </TableRow>
@@ -160,6 +161,18 @@ export function AdminFuturePartiesPage() {
                     <TableCell>{row.kidAge}</TableCell>
                     <TableCell>{formatDate(row.submittedAt)}</TableCell>
                     <TableCell>{row.bundleSentAt ? formatDate(row.bundleSentAt) : '—'}</TableCell>
+
+                    {/* Code / Redemption column */}
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                          {row.redemptionCode ?? '—'}
+                        </Typography>
+                        {row.redeemedAt !== null && (
+                          <Chip label="Redeemed" size="small" color="success" />
+                        )}
+                      </Box>
+                    </TableCell>
 
                     {/* Actions column (AC5.1, AC6.1, AC6.2) */}
                     <TableCell>

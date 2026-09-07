@@ -143,6 +143,12 @@ export interface CheckoutIntentBody {
   shippingState: string;
   shippingZip: string;
   shippingCountry?: string;
+  items: Array<{              // cart items sent at checkout time (frontend-memory cart)
+    bundlePublicId: string;
+    upgradeTier: 'STANDARD' | 'PREMIUM';
+    giftBagOptionId: number | null;
+    quantity: number;
+  }>;
 }
 
 /**

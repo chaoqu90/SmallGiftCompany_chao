@@ -11,7 +11,6 @@ import { ConfiguratorVisual } from '../components/ConfiguratorVisual'
 import { IncludedItemCard }   from '../components/IncludedItemCard'
 import { OptionCard }         from '../components/OptionCard'
 import { useCart } from '../contexts/CartContext'
-import { addToCart } from '../lib/cartApi'
 
 // ── Configurator palette (spec §14) ─────────────────────────────────────────
 
@@ -35,7 +34,7 @@ function bundleDisplayName(templateCode: string): string {
 export function BundleCustomizationPage() {
   const { bundleId } = useParams<{ bundleId: string }>()
   const navigate     = useNavigate()
-  const { sessionId, refreshCart } = useCart()
+  const { addItem, refreshCart } = useCart()
 
   const viewTracked = useRef(false)
 
@@ -44,7 +43,6 @@ export function BundleCustomizationPage() {
   const [error,     setError]     = useState<string | null>(null)
   const [continued, setContinued] = useState(false)
   const [addingToCart, setAddingToCart] = useState(false)
-  const [cartError, setCartError] = useState<string | null>(null)
 
   const [highlightedSku,  setHighlightedSku]  = useState<string | null>(null)
   const [upgradeOptionId, setUpgradeOptionId] = useState<string>('standard')
@@ -427,36 +425,24 @@ export function BundleCustomizationPage() {
             </Typography>
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
-              {cartError && (
-                <Alert severity="error" sx={{ mb: 0.5, fontSize: '0.8rem', py: 0 }}>
-                  {cartError}
-                </Alert>
-              )}
               <Button
                 variant="contained"
                 size="large"
                 disabled={addingToCart}
                 startIcon={addingToCart ? <CircularProgress size={16} color="inherit" /> : null}
                 onClick={async () => {
-                  setContinued(true)
-                  if (!bundle || !sessionId) return
-                  setCartError(null)
+                  if (!bundle) return
                   setAddingToCart(true)
-                  try {
-                    await addToCart(sessionId, {
-                      bundlePublicId: bundle.generatedBundleId,
-                      upgradeTier: upgradeOptionId === 'upgraded' ? 'PREMIUM' : 'STANDARD',
-                      quantity,
-                    })
-                    // Bundle is now persisted in DB — clear the sessionStorage entry
-                    sessionStorage.removeItem(`bundle:${bundle.generatedBundleId}`)
-                    await refreshCart()
-                    navigate('/cart')
-                  } catch {
-                    setCartError('Could not add to cart. Please try again.')
-                  } finally {
-                    setAddingToCart(false)
-                  }
+                  addItem(
+                    bundle,
+                    upgradeOptionId === 'upgraded' ? 'PREMIUM' : 'STANDARD',
+                    null,
+                    quantity,
+                  )
+                  await refreshCart()
+                  setContinued(true)
+                  setAddingToCart(false)
+                  navigate('/cart')
                 }}
                 data-testid="continue-btn"
                 sx={{

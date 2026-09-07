@@ -123,6 +123,8 @@ export interface AdminFutureParty {
   submittedAt:          string
   linkedBundlePublicId: string | null
   bundleSentAt:         string | null
+  redemptionCode:       string | null
+  redeemedAt:           string | null
 }
 
 export const adminApi = {
@@ -221,6 +223,13 @@ export const adminApi = {
   sendFuturePartyLink: (auth: string, id: number) =>
     adminRequest<{ sentAt: string }>(`/admin/api/future-parties/${id}/send-link`, auth, {
       method: 'POST',
+    }),
+
+  /** POST /admin/api/future-parties/redeem — redeem a promotion by 6-digit code */
+  redeemPromotion: (auth: string, code: string) =>
+    adminRequest<AdminFutureParty>('/admin/api/future-parties/redeem', auth, {
+      method: 'POST',
+      body: JSON.stringify({ code }),
     }),
 
   /** Step 1: get a presigned PUT URL + final public URL from the backend. */

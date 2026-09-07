@@ -15,13 +15,22 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod';
 import { jwtVerify } from 'jose';
 import { stripe } from '../lib/stripe.js';
-import { getCartWithDetails } from '../repositories/cart.js';
+import { getCartWithDetails, upsertCartItemExact, findBundleIdByPublicId } from '../repositories/cart.js';
+import { saveBundleIdempotent } from '../repositories/generatedBundles.js';
+import { getBundle, evictBundle } from '../lib/bundleCache.js';
 
 export const checkoutRouter = Router();
 
 const secretKey = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? '');
 
 // ─── Zod schema ───────────────────────────────────────────────────────────────
+
+const CartItemInputSchema = z.object({
+  bundlePublicId: z.string().min(1),
+  upgradeTier:    z.enum(['STANDARD', 'PREMIUM']).default('STANDARD'),
+  giftBagOptionId: z.number().int().positive().nullable().optional(),
+  quantity:       z.number().int().min(1).default(1),
+});
 
 const IntentSchema = z.object({
   email:           z.string().email(),
@@ -31,6 +40,7 @@ const IntentSchema = z.object({
   shippingState:   z.string().min(1),
   shippingZip:     z.string().min(1),
   shippingCountry: z.string().length(2).optional().default('US'),
+  items:           z.array(CartItemInputSchema).min(1),
 });
 
 // ─── POST /api/checkout/intent ────────────────────────────────────────────────
@@ -65,9 +75,47 @@ checkoutRouter.post(
         });
         return;
       }
-      const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry } = parsed.data;
+      const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
 
-      // Fetch cart items with price data
+      // Persist bundles from in-memory cache to DB, then upsert cart_item rows.
+      // The frontend sends only bundlePublicId; the full snapshot is held in the
+      // Lambda in-memory cache from the earlier generate call. If the Lambda
+      // restarted (cache miss), fall back to a DB lookup.
+      for (const item of items) {
+        let bundleDbId: number;
+        const cached = getBundle(item.bundlePublicId);
+        if (cached) {
+          const savedRow = await saveBundleIdempotent(cached.snapshot);
+          evictBundle(item.bundlePublicId);
+          bundleDbId = savedRow.id;
+        } else {
+          // Cache miss — bundle was either already saved (retry) or Lambda restarted
+          const foundId = await findBundleIdByPublicId(item.bundlePublicId);
+          if (!foundId) {
+            res.status(422).json({
+              type: 'about:validation-error',
+              title: 'Bundle not found',
+              status: 422,
+              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+              instance: req.path,
+            });
+            return;
+          }
+          bundleDbId = foundId;
+        }
+
+        // Use exact-quantity upsert (not additive) — checkout retries must not
+        // double-count quantity the way the cart API upsert does.
+        await upsertCartItemExact(
+          sid,
+          bundleDbId,
+          item.upgradeTier,
+          item.giftBagOptionId ?? null,
+          item.quantity,
+        );
+      }
+
+      // Fetch cart items with price data (now persisted above)
       const cartItems = await getCartWithDetails(sid);
       if (cartItems.length === 0) {
         res.status(400).json({

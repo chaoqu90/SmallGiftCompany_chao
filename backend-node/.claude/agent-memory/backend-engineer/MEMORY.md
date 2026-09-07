@@ -1,0 +1,1 @@
+- [Redemption code system](project_redemption_codes.md) — 6-digit codes on future_parties for signup-promotion rows; admin POST /redeem endpoint; fair booth September 12 2026

@@ -141,9 +141,9 @@ userCartRouter.post(
       const sessionId = (req as Request & { sessionId: string }).sessionId;
 
       // Resolve bundlePublicId to internal DB id.
-      // If the bundle is in the memory cache (not yet saved), persist it now.
-      // Otherwise fall back to a DB lookup (bundle was already saved).
-      let bundleId: number | null = null;
+      // Try in-memory cache first (bundle generated in this Lambda instance but not yet
+      // persisted). On cache miss, fall back to DB (already persisted or Lambda restart).
+      let bundleId: number | null;
       const cached = getBundle(data.bundlePublicId);
       if (cached) {
         const savedRow = await saveBundle(cached.snapshot);

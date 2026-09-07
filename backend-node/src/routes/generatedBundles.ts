@@ -24,7 +24,8 @@ import * as affinitiesRepo from '../repositories/affinities.js';
 import * as bundleTemplatesRepo from '../repositories/bundleTemplates.js';
 import * as budgetTiersRepo from '../repositories/budgetTiers.js';
 import * as giftBagOptionsRepo from '../repositories/giftBagOptions.js';
-import { putBundle, getBundle } from '../lib/bundleCache.js';
+import { getBundle, putBundle } from '../lib/bundleCache.js';
+import { saveBundle } from '../repositories/generatedBundles.js';
 import type { GenerationRepos } from '../services/bundleGeneration.js';
 
 // Secret key for optional JWT extraction (same key used by jwtAuth middleware)
@@ -84,8 +85,15 @@ generatedBundlesRouter.post(
       // The endpoint remains public — userId is null for anonymous requests.
       const userId = await tryExtractUserId(req);
       const { response, snapshot, templateCode } = await bundleGenerationService.generate(parsed, productionRepos, userId);
-      // Cache the snapshot in memory; DB save is deferred to when the user adds to cart.
-      putBundle(snapshot.publicId, snapshot, templateCode);
+      // Admin requests (Basic auth) save to DB immediately.
+      // Public requests store the snapshot in the in-memory cache only — DB write
+      // is deferred to checkout time (frontend-memory cart design).
+      const isAdmin = req.headers.authorization?.startsWith('Basic ') ?? false;
+      if (isAdmin) {
+        await saveBundle(snapshot);
+      } else {
+        putBundle(snapshot.publicId, snapshot, templateCode);
+      }
       res.status(201).json(response);
     } catch (err) {
       next(err);

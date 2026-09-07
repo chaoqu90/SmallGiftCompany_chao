@@ -4,6 +4,7 @@
  * GET  /admin/api/future-parties                       — list all submissions
  * PATCH /admin/api/future-parties/:id/link-bundle      — link a generated bundle
  * POST  /admin/api/future-parties/:id/send-link        — send bundle email to parent
+ * POST  /admin/api/future-parties/redeem               — redeem a 6-digit code at the fair booth
  *
  * Requirements: AC4.3, AC5.5, AC6.3, AC6.4, AC6.5, AC7.2, AC7.3
  * Design: specs/future-party/design.md §3.5
@@ -14,6 +15,8 @@ import { LinkBundleRequestSchema } from '../../types/dtos.js';
 import {
   listFutureParties,
   findFuturePartyById,
+  findByRedemptionCode,
+  markRedeemed,
   linkBundle,
   recordSend,
 } from '../../repositories/futureParties.js';
@@ -37,6 +40,77 @@ adminFuturePartiesRouter.get(
     try {
       const rows = await listFutureParties();
       res.json(rows.map(toFuturePartyDto));
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── POST /redeem ─────────────────────────────────────────────────────────────
+
+/**
+ * Redeem a 6-digit code at the fair booth.
+ *
+ * Body: { code: string }
+ *
+ * 404 — code not found
+ * 409 — code already redeemed
+ * 200 — success; returns the full future party DTO with redeemedAt set
+ */
+adminFuturePartiesRouter.post(
+  '/redeem',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { code } = req.body as { code?: unknown };
+
+      // Validate: must be a 6-digit numeric string
+      if (typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+        res.status(400).json({
+          type:     'about:validation-error',
+          title:    'Validation Error',
+          status:   400,
+          detail:   'code must be a 6-digit numeric string.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const row = await findByRedemptionCode(code);
+      if (!row) {
+        res.status(404).json({
+          type:     'about:not-found',
+          title:    'Not Found',
+          status:   404,
+          detail:   'Redemption code not found.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      if (row.redeemed_at !== null) {
+        res.status(409).json({
+          type:     'about:conflict',
+          title:    'Conflict',
+          status:   409,
+          detail:   'This code has already been redeemed.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const updated = await markRedeemed(row.id);
+      // undefined means a concurrent request redeemed the code first (race guard)
+      if (!updated) {
+        res.status(409).json({
+          type:     'about:conflict',
+          title:    'Conflict',
+          status:   409,
+          detail:   'This code has already been redeemed.',
+          instance: req.path,
+        });
+        return;
+      }
+      res.json(toFuturePartyDto(updated));
     } catch (err) {
       next(err);
     }

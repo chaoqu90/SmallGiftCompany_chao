@@ -96,6 +96,31 @@ export async function addOrUpdateCartItem(
 }
 
 /**
+ * Upsert a cart item with exact quantity — used by the checkout intent path.
+ * Unlike addOrUpdateCartItem, the ON CONFLICT branch sets quantity = EXCLUDED.quantity
+ * (not additive) so checkout retries don't double-count.
+ */
+export async function upsertCartItemExact(
+  sessionId: string,
+  generatedBundleId: number,
+  upgradeTier: string,
+  giftBagOptionId: number | null,
+  quantity: number,
+): Promise<CartItemRow> {
+  const rows = await sql<CartItemRow[]>`
+    INSERT INTO cart_item (session_id, generated_bundle_id, upgrade_tier, gift_bag_option_id, quantity)
+    VALUES (${sessionId}, ${generatedBundleId}, ${upgradeTier}, ${giftBagOptionId}, ${quantity})
+    ON CONFLICT (session_id, generated_bundle_id) DO UPDATE
+      SET upgrade_tier       = EXCLUDED.upgrade_tier,
+          gift_bag_option_id = EXCLUDED.gift_bag_option_id,
+          quantity           = EXCLUDED.quantity,
+          updated_at         = now()
+    RETURNING *
+  `;
+  return rows[0];
+}
+
+/**
  * Updates upgrade_tier, gift_bag_option_id, or quantity on an existing cart item.
  * WHERE session_id = sessionId enforces session isolation.
  * Returns the updated row or null if not found / not owned by this session.

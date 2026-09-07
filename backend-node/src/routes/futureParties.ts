@@ -29,6 +29,8 @@ export function toFuturePartyDto(row: FuturePartyRow) {
     linkedBundlePublicId: row.linked_bundle_public_id,
     bundleSentAt:         row.bundle_sent_at,
     source:               row.source,         // FEAT-005 AC4.2
+    redemptionCode:       row.redemption_code,
+    redeemedAt:           row.redeemed_at,
   };
 }
 
@@ -67,7 +69,10 @@ futurePartiesRouter.post(
       // Intentionally NOT awaited — the 201 response is returned immediately.
       // sendSignupPromotionEmail swallows SES errors internally with console.warn.
       if (parsed.source === 'signup-promotion') {
-        sendSignupPromotionEmail({ toEmail: parsed.email }).catch(() => {
+        sendSignupPromotionEmail({
+          toEmail:        parsed.email,
+          redemptionCode: row.redemption_code ?? '',
+        }).catch(() => {
           // Already logged inside sendSignupPromotionEmail (AC4.6)
         });
       }

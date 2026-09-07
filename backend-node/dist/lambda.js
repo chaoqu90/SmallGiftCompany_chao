@@ -75270,6 +75270,13 @@ async function saveBundle(snapshot) {
     return bundle;
   });
 }
+async function saveBundleIdempotent(snapshot) {
+  const existing = await sql`
+    SELECT * FROM generated_bundle WHERE public_id = ${snapshot.publicId}
+  `;
+  if (existing.length > 0) return existing[0];
+  return saveBundle(snapshot);
+}
 async function findBundleByPublicId(publicId) {
   const bundles = await sql`
     SELECT gb.*,
@@ -75754,7 +75761,12 @@ generatedBundlesRouter.post(
       const parsed = BundleGenerationRequestSchema.parse(req.body);
       const userId = await tryExtractUserId(req);
       const { response, snapshot, templateCode } = await generate(parsed, productionRepos, userId);
-      putBundle(snapshot.publicId, snapshot, templateCode);
+      const isAdmin = req.headers.authorization?.startsWith("Basic ") ?? false;
+      if (isAdmin) {
+        await saveBundle(snapshot);
+      } else {
+        putBundle(snapshot.publicId, snapshot, templateCode);
+      }
       res.status(201).json(response);
     } catch (err) {
       next(err);
@@ -76685,6 +76697,19 @@ async function addOrUpdateCartItem(sessionId, generatedBundleId, upgradeTier, gi
   `;
   return rows[0];
 }
+async function upsertCartItemExact(sessionId, generatedBundleId, upgradeTier, giftBagOptionId, quantity) {
+  const rows = await sql`
+    INSERT INTO cart_item (session_id, generated_bundle_id, upgrade_tier, gift_bag_option_id, quantity)
+    VALUES (${sessionId}, ${generatedBundleId}, ${upgradeTier}, ${giftBagOptionId}, ${quantity})
+    ON CONFLICT (session_id, generated_bundle_id) DO UPDATE
+      SET upgrade_tier       = EXCLUDED.upgrade_tier,
+          gift_bag_option_id = EXCLUDED.gift_bag_option_id,
+          quantity           = EXCLUDED.quantity,
+          updated_at         = now()
+    RETURNING *
+  `;
+  return rows[0];
+}
 async function updateCartItem(id, sessionId, data) {
   const current = await sql`
     SELECT * FROM cart_item WHERE id = ${id} AND session_id = ${sessionId}
@@ -76811,7 +76836,7 @@ userCartRouter.post(
     try {
       const data = AddToCartSchema.parse(req.body);
       const sessionId = req.sessionId;
-      let bundleId = null;
+      let bundleId;
       const cached2 = getBundle(data.bundlePublicId);
       if (cached2) {
         const savedRow = await saveBundle(cached2.snapshot);
@@ -77085,7 +77110,7 @@ async function sendFuturePartyEmail(data) {
     }
   }));
 }
-function buildSignupPromotionHtml(_data5) {
+function buildSignupPromotionHtml(data) {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -77098,14 +77123,17 @@ function buildSignupPromotionHtml(_data5) {
     <li><strong>Date:</strong> Saturday, September 12, 2026</li>
     <li><strong>Time:</strong> 11 AM \u2013 3 PM</li>
   </ul>
-  <p>Show this email (or just mention Small Gift Shop) at our booth to collect your
-     surprise gift. We can't wait to see you there!</p>
+  <div style="background:#fff8f0;border:2px solid #f47f6b;border-radius:8px;padding:20px;text-align:center;margin:24px 0;">
+    <p style="margin:0 0 8px;font-size:14px;color:#666;">Your redemption code</p>
+    <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:6px;color:#f47f6b;">${data.redemptionCode}</p>
+  </div>
+  <p>Show this code at our booth at the <strong>Loudoun Children's Business Fair</strong> on <strong>Saturday, September 12, 2026, 11 AM \u2013 3 PM</strong> to redeem your surprise gift!</p>
   <hr style="margin:24px 0;">
   <p style="color:#999;font-size:12px;">It Is A Small Gift Co. \u2014 Good Stuff. Handpicked By Kids.</p>
 </body>
 </html>`;
 }
-function buildSignupPromotionText(_data5) {
+function buildSignupPromotionText(data) {
   return [
     "Thank you for signing up!",
     "",
@@ -77117,8 +77145,10 @@ function buildSignupPromotionText(_data5) {
     "  Date: Saturday, September 12, 2026",
     "  Time: 11 AM \u2013 3 PM",
     "",
-    "Show this email (or just mention Small Gift Shop) at our booth to collect your",
-    "surprise gift. We can't wait to see you there!",
+    `Your redemption code: ${data.redemptionCode}`,
+    "",
+    "Show this code at our booth at the Loudoun Children's Business Fair on",
+    "Saturday, September 12, 2026, 11 AM \u2013 3 PM to redeem your surprise gift!",
     "",
     "It Is A Small Gift Co. \u2014 Good Stuff. Handpicked By Kids."
   ].join("\n");
@@ -95790,6 +95820,12 @@ var stripe = new stripe_esm_node_default(process.env.STRIPE_SECRET_KEY, {
 // src/routes/checkout.ts
 var checkoutRouter = (0, import_express12.Router)();
 var secretKey3 = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
+var CartItemInputSchema = external_exports.object({
+  bundlePublicId: external_exports.string().min(1),
+  upgradeTier: external_exports.enum(["STANDARD", "PREMIUM"]).default("STANDARD"),
+  giftBagOptionId: external_exports.number().int().positive().nullable().optional(),
+  quantity: external_exports.number().int().min(1).default(1)
+});
 var IntentSchema = external_exports.object({
   email: external_exports.string().email(),
   name: external_exports.string().optional(),
@@ -95797,7 +95833,8 @@ var IntentSchema = external_exports.object({
   shippingCity: external_exports.string().min(1),
   shippingState: external_exports.string().min(1),
   shippingZip: external_exports.string().min(1),
-  shippingCountry: external_exports.string().length(2).optional().default("US")
+  shippingCountry: external_exports.string().length(2).optional().default("US"),
+  items: external_exports.array(CartItemInputSchema).min(1)
 });
 checkoutRouter.post(
   "/intent",
@@ -95826,7 +95863,36 @@ checkoutRouter.post(
         });
         return;
       }
-      const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry } = parsed.data;
+      const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
+      for (const item of items) {
+        let bundleDbId;
+        const cached2 = getBundle(item.bundlePublicId);
+        if (cached2) {
+          const savedRow = await saveBundleIdempotent(cached2.snapshot);
+          evictBundle(item.bundlePublicId);
+          bundleDbId = savedRow.id;
+        } else {
+          const foundId = await findBundleIdByPublicId(item.bundlePublicId);
+          if (!foundId) {
+            res.status(422).json({
+              type: "about:validation-error",
+              title: "Bundle not found",
+              status: 422,
+              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+              instance: req.path
+            });
+            return;
+          }
+          bundleDbId = foundId;
+        }
+        await upsertCartItemExact(
+          sid,
+          bundleDbId,
+          item.upgradeTier,
+          item.giftBagOptionId ?? null,
+          item.quantity
+        );
+      }
       const cartItems = await getCartWithDetails(sid);
       if (cartItems.length === 0) {
         res.status(400).json({
@@ -95941,10 +96007,26 @@ webhookRouter.post(
 var import_express14 = __toESM(require_express2(), 1);
 
 // src/repositories/futureParties.ts
+async function generateRedemptionCode() {
+  for (let i5 = 0; i5 < 10; i5++) {
+    const code = String(Math.floor(1e5 + Math.random() * 9e5));
+    const rows = await sql`SELECT id FROM future_parties WHERE redemption_code = ${code}`;
+    if (rows.length === 0) return code;
+  }
+  throw new Error("Failed to generate unique redemption code after 10 attempts");
+}
 async function insertFutureParty(data) {
+  const redemptionCode = data.source === "signup-promotion" ? await generateRedemptionCode() : null;
   const rows = await sql`
-    INSERT INTO future_parties (email, party_date, kid_gender, kid_age, source)
-    VALUES (${data.email}, ${data.partyDate}, ${data.kidGender}, ${data.kidAge}, ${data.source})
+    INSERT INTO future_parties (email, party_date, kid_gender, kid_age, source, redemption_code)
+    VALUES (
+      ${data.email},
+      ${data.partyDate},
+      ${data.kidGender},
+      ${data.kidAge},
+      ${data.source},
+      ${redemptionCode}
+    )
     RETURNING *
   `;
   return rows[0];
@@ -95959,6 +96041,22 @@ async function findFuturePartyById(id) {
   const rows = await sql`
     SELECT * FROM future_parties
     WHERE id = ${id}
+  `;
+  return rows[0];
+}
+async function findByRedemptionCode(code) {
+  const rows = await sql`
+    SELECT * FROM future_parties WHERE redemption_code = ${code}
+  `;
+  return rows[0];
+}
+async function markRedeemed(id) {
+  const rows = await sql`
+    UPDATE future_parties
+    SET redeemed_at = now()
+    WHERE id = ${id}
+      AND redeemed_at IS NULL
+    RETURNING *
   `;
   return rows[0];
 }
@@ -95993,8 +96091,10 @@ function toFuturePartyDto(row) {
     submittedAt: row.submitted_at,
     linkedBundlePublicId: row.linked_bundle_public_id,
     bundleSentAt: row.bundle_sent_at,
-    source: row.source
+    source: row.source,
     // FEAT-005 AC4.2
+    redemptionCode: row.redemption_code,
+    redeemedAt: row.redeemed_at
   };
 }
 futurePartiesRouter.post(
@@ -96021,7 +96121,10 @@ futurePartiesRouter.post(
         source: parsed.source ?? null
       });
       if (parsed.source === "signup-promotion") {
-        sendSignupPromotionEmail({ toEmail: parsed.email }).catch(() => {
+        sendSignupPromotionEmail({
+          toEmail: parsed.email,
+          redemptionCode: row.redemption_code ?? ""
+        }).catch(() => {
         });
       }
       res.status(201).json(toFuturePartyDto(row));
@@ -96041,6 +96144,59 @@ adminFuturePartiesRouter.get(
     try {
       const rows = await listFutureParties();
       res.json(rows.map(toFuturePartyDto));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminFuturePartiesRouter.post(
+  "/redeem",
+  async (req, res, next) => {
+    try {
+      const { code } = req.body;
+      if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Validation Error",
+          status: 400,
+          detail: "code must be a 6-digit numeric string.",
+          instance: req.path
+        });
+        return;
+      }
+      const row = await findByRedemptionCode(code);
+      if (!row) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: "Redemption code not found.",
+          instance: req.path
+        });
+        return;
+      }
+      if (row.redeemed_at !== null) {
+        res.status(409).json({
+          type: "about:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "This code has already been redeemed.",
+          instance: req.path
+        });
+        return;
+      }
+      const updated = await markRedeemed(row.id);
+      if (!updated) {
+        res.status(409).json({
+          type: "about:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "This code has already been redeemed.",
+          instance: req.path
+        });
+        return;
+      }
+      res.json(toFuturePartyDto(updated));
     } catch (err) {
       next(err);
     }

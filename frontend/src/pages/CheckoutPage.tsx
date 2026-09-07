@@ -7,6 +7,10 @@
  *   Phase 2: Stripe Payment Element renders (credit card + Apple Pay)
  *            → stripe.confirmPayment() → redirects to /orders/confirmation
  *
+ * Cart items come from CartContext (localStorage-backed, no server fetch).
+ * Items are sent in the createPaymentIntent request body so the backend
+ * can write them to the DB at checkout time.
+ *
  * No auth required. Email is required (pre-filled if signed in).
  * Shipping address is required.
  *
@@ -24,7 +28,6 @@ import {
   Divider,
   Link,
   Paper,
-  Skeleton,
   Stack,
   TextField,
   Typography,
@@ -38,7 +41,7 @@ import {
 } from '@stripe/react-stripe-js'
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
-import { getCart, type CartDto } from '../lib/cartApi'
+import { getGiftBagOptions, type GiftBagOptionDto } from '../lib/cartApi'
 import { createPaymentIntent } from '../lib/ordersApi'
 import { getProfile } from '../lib/userApi'
 
@@ -47,6 +50,21 @@ import { getProfile } from '../lib/userApi'
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string)
 
 const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+// ─── Local price computation (mirrors CartPage formula) ───────────────────────
+
+function computeUnitPrice(
+  bundle: { bundleRetailPrice: number | null; upgrade: { standardRetailAdjustment: number | null; upgradedRetailAdjustment: number | null } | null },
+  upgradeTier: 'STANDARD' | 'PREMIUM',
+  selectedGiftBag: GiftBagOptionDto | null,
+): number {
+  const base = bundle.bundleRetailPrice ?? 0
+  const upgradeAdj = upgradeTier === 'PREMIUM'
+    ? (bundle.upgrade?.upgradedRetailAdjustment ?? 0)
+    : (bundle.upgrade?.standardRetailAdjustment ?? 0)
+  const giftBagAdj = selectedGiftBag?.retailPriceAdjustment ?? 0
+  return Math.round((base + upgradeAdj + giftBagAdj) * 100) / 100
+}
 
 // ─── Inner payment form (rendered inside <Elements>) ─────────────────────────
 
@@ -118,12 +136,10 @@ function PaymentForm({ totalCents, onBack }: PaymentFormProps) {
 
 export function CheckoutPage() {
   const { session } = useAuth()
-  const { sessionId } = useCart()
+  const { sessionId, items } = useCart()
   const navigate = useNavigate()
 
-  const [cart, setCart] = useState<CartDto | null>(null)
-  const [loadingCart, setLoadingCart] = useState(true)
-  const [cartError, setCartError] = useState<string | null>(null)
+  const [giftBagOptions, setGiftBagOptions] = useState<GiftBagOptionDto[]>([])
 
   // Contact + shipping fields
   const [email, setEmail] = useState('')
@@ -139,25 +155,32 @@ export function CheckoutPage() {
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [intentError, setIntentError] = useState<string | null>(null)
 
-  // Fetch cart and pre-populate contact fields
+  // Pre-populate contact fields from auth session and profile
   useEffect(() => {
-    if (!sessionId) return
     const accessToken = session?.access_token
-
-    Promise.all([
-      getCart(sessionId),
-      accessToken ? getProfile(accessToken).catch(() => null) : Promise.resolve(null),
-    ])
-      .then(([cartData, profile]) => {
-        setCart(cartData)
-        if (session?.user?.email) setEmail(session.user.email)
+    if (session?.user?.email) setEmail(session.user.email)
+    if (accessToken) {
+      getProfile(accessToken).then(profile => {
         if (profile?.displayName) setFullName(profile.displayName)
-      })
-      .catch(() => setCartError('Failed to load cart. Please try again.'))
-      .finally(() => setLoadingCart(false))
-  }, [sessionId, session])
+      }).catch(() => { /* ignore */ })
+    }
+  }, [session])
 
-  const hasItems = (cart?.items.length ?? 0) > 0
+  // Fetch gift bag options for the order summary display
+  useEffect(() => {
+    getGiftBagOptions().then(setGiftBagOptions).catch(() => { /* non-critical */ })
+  }, [])
+
+  // Compute local total for the order summary
+  const localTotal = items.reduce((sum, item) => {
+    const selectedGiftBag = item.giftBagOptionId != null
+      ? (giftBagOptions.find(o => o.id === item.giftBagOptionId) ?? null)
+      : null
+    const unitPrice = computeUnitPrice(item.bundle, item.upgradeTier, selectedGiftBag)
+    return Math.round((sum + unitPrice * item.quantity) * 100) / 100
+  }, 0)
+
+  const hasItems = items.length > 0
   const canContinue =
     !creatingIntent &&
     hasItems &&
@@ -183,6 +206,12 @@ export function CheckoutPage() {
           shippingState: shippingState.trim(),
           shippingZip: shippingZip.trim(),
           shippingCountry: 'US',
+          items: items.map(item => ({
+            bundlePublicId: item.bundle.generatedBundleId,
+            upgradeTier: item.upgradeTier,
+            giftBagOptionId: item.giftBagOptionId,
+            quantity: item.quantity,
+          })),
         },
         session?.access_token,
       )
@@ -195,25 +224,6 @@ export function CheckoutPage() {
     }
   }
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
-
-  if (loadingCart) {
-    return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Skeleton variant="rectangular" height={200} sx={{ mb: 2, borderRadius: 1 }} />
-        <Skeleton variant="rectangular" height={180} />
-      </Container>
-    )
-  }
-
-  if (cartError) {
-    return (
-      <Container maxWidth="md" sx={{ py: 4 }}>
-        <Alert severity="error">{cartError}</Alert>
-      </Container>
-    )
-  }
-
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Typography variant="h5" fontWeight={700} mb={3}>Checkout</Typography>
@@ -223,26 +233,37 @@ export function CheckoutPage() {
         <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" fontWeight={700} mb={2}>Order Summary</Typography>
           <Stack spacing={1.5} divider={<Divider />}>
-            {cart!.items.map(item => (
-              <Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Box>
-                  <Typography variant="body2" fontWeight={600} sx={{ textTransform: 'capitalize' }}>
-                    {item.interest.replace(/_/g, ' ')} Bundle
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {item.upgradeTier} · {item.giftBagName ?? 'No gift bag'} · Qty {item.quantity}
+            {items.map(item => {
+              const selectedGiftBag = item.giftBagOptionId != null
+                ? (giftBagOptions.find(o => o.id === item.giftBagOptionId) ?? null)
+                : null
+              const unitPrice = computeUnitPrice(item.bundle, item.upgradeTier, selectedGiftBag)
+              const lineTotal = Math.round(unitPrice * item.quantity * 100) / 100
+              const bundleLabel = item.bundle.templateCode
+                .replace(/_/g, ' ')
+                .toLowerCase()
+                .replace(/\b\w/g, c => c.toUpperCase())
+              return (
+                <Box key={item.id} sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={600}>
+                      {bundleLabel}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {item.upgradeTier} · {selectedGiftBag?.name ?? 'No gift bag'} · Qty {item.quantity}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" fontWeight={600}>
+                    {fmt.format(lineTotal)}
                   </Typography>
                 </Box>
-                <Typography variant="body2" fontWeight={600}>
-                  {fmt.format(item.lineTotal)}
-                </Typography>
-              </Box>
-            ))}
+              )
+            })}
           </Stack>
           <Divider sx={{ my: 2 }} />
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography fontWeight={700}>Total</Typography>
-            <Typography fontWeight={700}>{fmt.format(cart!.total)}</Typography>
+            <Typography fontWeight={700}>{fmt.format(localTotal)}</Typography>
           </Box>
         </Paper>
       ) : (

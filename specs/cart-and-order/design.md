@@ -1,7 +1,7 @@
 # Cart & Order Management — Technical Design
 
-> **Status:** Approved — revised 2026-09-01 (anonymous cart)
-> **Last updated:** 2026-09-01
+> **Status:** Approved — revised 2026-09-07 (frontend-memory cart)
+> **Last updated:** 2026-09-07
 
 ---
 
@@ -9,13 +9,28 @@
 
 This feature adds a shopping cart and order tracking layer on top of the existing immutable bundle snapshot model. Key decisions:
 
-- **Cart does NOT require authentication** — cart is persisted server-side keyed by a `session_id` (UUID generated client-side, stored in localStorage, sent on every cart request via `X-Session-Id` header). No login required to browse, add to cart, or check out.
-- **Orders identified by email** — customer email is collected at checkout (payment step). No account required to place an order. The email address is the primary identifier for anonymous orders.
-- **Logged-in users get order history** — if a user is signed in at checkout time, their `user_id` is also stored on the order, enabling the `/orders` history page. Anonymous users receive a confirmation page via `publicId`.
+- **Cart lives entirely in the browser** — cart items (bundle snapshots + user choices) are stored in `localStorage` + React context. No DB writes until the user proceeds to checkout. No backend cart API calls for add/update/remove operations.
+- **Bundles are NOT saved to DB on generation (public flow)** — `POST /api/generated-bundles` keeps the snapshot in an in-memory cache only. The bundle snapshot is passed to the browser via the 201 response and cached in `sessionStorage`. DB persistence is deferred to checkout time.
+- **Admin-generated bundles ARE saved to DB immediately** — when the request carries an `Authorization: Basic` header (admin flow), the bundle is persisted right away because it will be linked to a future party submission and emailed as a permanent link.
+- **All DB writes happen at `POST /api/checkout/intent`** — when the user clicks "Continue to Payment", the frontend sends the full cart (bundle snapshots + choices) in the request body. The server saves each bundle to DB, saves `cart_item` rows keyed by `session_id`, then creates the Stripe PaymentIntent. This is the single commit point before payment.
+- **Stripe webhook creates the order** — after payment confirmation, the webhook reads `cart_item` from DB by `session_id` (already persisted at intent time), creates `customer_order` + `order_line_item` rows atomically, and clears the cart.
+- **Orders identified by email** — customer email is collected at checkout. No account required. The email address is the primary identifier for anonymous orders.
+- **Logged-in users get order history** — if a user is signed in at checkout time, their `user_id` is also stored on the order.
 - **Users can pick any active gift bag option** in the cart, not just the one pre-generated with the bundle.
-- **No payment processor in this phase** — orders are created and managed for fulfillment tracking only. Schema includes nullable Stripe stub columns so payment can be wired later without a migration.
+- **Prices computed client-side for display, server-side for billing** — the `GeneratedBundleResponse` carries all pricing fields (`bundleRetailPrice`, `upgrade.standardRetailAdjustment`, `upgrade.upgradedRetailAdjustment`, `giftBag.retailPriceAdjustment`). The CartPage computes display prices locally. The server re-computes authoritatively at checkout intent time — the client-sent price is never trusted.
 
-**Design principle:** `generated_bundle` stays pure — it is an immutable recommendation engine output. Cart and order are separate lifecycle concerns with their own tables.
+**Design principle:** Zero DB writes for browsing and cart management. The commit point is the checkout intent — at that moment the user has expressed intent to pay, so persisting their cart is justified. Abandoned sessions leave no DB footprint.
+
+### DB write timeline
+
+| User action | DB write? |
+|---|---|
+| Generate bundle (public) | No — in-memory cache + sessionStorage |
+| Generate bundle (admin Basic auth) | Yes — immediately |
+| Add to cart | No — localStorage only |
+| Update/remove cart item | No — localStorage only |
+| Click "Continue to Payment" (`POST /api/checkout/intent`) | Yes — saves bundles + cart_items + creates Stripe PI |
+| Stripe webhook fires (payment confirmed) | Yes — creates customer_order + order_line_item, clears cart_item |
 
 ---
 
@@ -143,42 +158,53 @@ PENDING ──→ CONFIRMED ──→ FULFILLED ──→ COMPLETED
 
 ---
 
-## 4. Checkout Transaction (Atomicity)
+## 4. Checkout Flow (Two-Phase)
 
-`POST /api/orders` executes in a single `sql.begin()` block:
+### Phase 1 — `POST /api/checkout/intent` (new: accepts cart in body)
+
+The frontend sends the full cart along with shipping/contact info. The server:
+
+```
+Body: {
+  email, name?, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry,
+  items: [
+    {
+      bundleSnapshot: GeneratedBundleSnapshot,  // full snapshot from sessionStorage
+      upgradeTier: 'STANDARD' | 'PREMIUM',
+      giftBagOptionId: number | null,
+      quantity: number
+    }
+  ]
+}
+
+1. For each item.bundleSnapshot:
+   - Call saveBundle(snapshot) with ON CONFLICT (public_id) DO NOTHING
+     (idempotent — safe to retry if payment fails and user tries again)
+   - Returns the DB row id
+
+2. Upsert cart_item rows (ON CONFLICT (session_id, generated_bundle_id) DO UPDATE)
+
+3. Compute total server-side from DB price data (never trust client prices)
+
+4. Create Stripe PaymentIntent with session_id + customer info in metadata
+
+5. Return { clientSecret, totalCents }
+```
+
+### Phase 2 — Stripe webhook `payment_intent.succeeded`
+
+Unchanged from original design — reads `cart_item` by `session_id` from DB (now populated by Phase 1):
 
 ```
 1. SELECT ... FROM cart_item WHERE session_id = $1 FOR UPDATE
-   → lock cart rows; fail fast if cart is empty
-
-2. For each cart item:
-   a. Fetch generated_bundle (base_retail_price)
-   b. Fetch generated_bundle_upgrade (standard/premium retail adjustments)
-   c. Fetch gift_bag_option (retail_price_adjustment) if gift_bag_option_id set
-   d. Compute unit_price server-side:
-        base_retail_price
-        + (upgrade_tier == 'PREMIUM' ? premium_retail_adj - standard_retail_adj : 0)
-        + (gift_bag_option_id ? gift_bag.retail_price_adjustment : 0)
-
-3. INSERT INTO customer_order (
-     session_id = $1,
-     user_id = req.user?.id ?? null,   -- from JWT if present, else null
-     customer_email = body.email,       -- required, collected at checkout
-     customer_name = body.name,         -- optional
-     subtotal = Σ line_total,
-     total = subtotal
-   )
-
-4. INSERT INTO order_line_item (one row per cart item)
-
-5. DELETE FROM cart_item WHERE session_id = $1
-
+2. Compute unit prices server-side
+3. INSERT customer_order
+4. INSERT order_line_item (one per cart item)
+5. DELETE cart_item WHERE session_id = $1
 6. COMMIT
 ```
 
-If any step fails, the transaction rolls back. The cart is untouched. The `FOR UPDATE` lock prevents duplicate-checkout race conditions.
-
-**Auth is optional at checkout:** The endpoint reads `Authorization: Bearer` if present (try/catch, no error if missing). If valid, `req.user.id` is stored on the order. This enables order history for signed-in users without requiring it.
+The `FOR UPDATE` lock prevents duplicate-webhook race conditions.
 
 ---
 

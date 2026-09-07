@@ -209,10 +209,11 @@ export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<
  * Design: specs/signup-promotion/design.md §3.3
  */
 export interface SignupPromotionEmailData {
-  toEmail: string;
+  toEmail:        string;
+  redemptionCode: string;
 }
 
-function buildSignupPromotionHtml(_data: SignupPromotionEmailData): string {
+function buildSignupPromotionHtml(data: SignupPromotionEmailData): string {
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -225,15 +226,18 @@ function buildSignupPromotionHtml(_data: SignupPromotionEmailData): string {
     <li><strong>Date:</strong> Saturday, September 12, 2026</li>
     <li><strong>Time:</strong> 11 AM – 3 PM</li>
   </ul>
-  <p>Show this email (or just mention Small Gift Shop) at our booth to collect your
-     surprise gift. We can't wait to see you there!</p>
+  <div style="background:#fff8f0;border:2px solid #f47f6b;border-radius:8px;padding:20px;text-align:center;margin:24px 0;">
+    <p style="margin:0 0 8px;font-size:14px;color:#666;">Your redemption code</p>
+    <p style="margin:0;font-size:36px;font-weight:700;letter-spacing:6px;color:#f47f6b;">${data.redemptionCode}</p>
+  </div>
+  <p>Show this code at our booth at the <strong>Loudoun Children's Business Fair</strong> on <strong>Saturday, September 12, 2026, 11 AM – 3 PM</strong> to redeem your surprise gift!</p>
   <hr style="margin:24px 0;">
   <p style="color:#999;font-size:12px;">It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.</p>
 </body>
 </html>`;
 }
 
-function buildSignupPromotionText(_data: SignupPromotionEmailData): string {
+function buildSignupPromotionText(data: SignupPromotionEmailData): string {
   return [
     "Thank you for signing up!",
     "",
@@ -245,8 +249,10 @@ function buildSignupPromotionText(_data: SignupPromotionEmailData): string {
     "  Date: Saturday, September 12, 2026",
     "  Time: 11 AM – 3 PM",
     "",
-    "Show this email (or just mention Small Gift Shop) at our booth to collect your",
-    "surprise gift. We can't wait to see you there!",
+    `Your redemption code: ${data.redemptionCode}`,
+    "",
+    "Show this code at our booth at the Loudoun Children's Business Fair on",
+    "Saturday, September 12, 2026, 11 AM – 3 PM to redeem your surprise gift!",
     "",
     "It Is A Small Gift Co. — Good Stuff. Handpicked By Kids.",
   ].join('\n');
