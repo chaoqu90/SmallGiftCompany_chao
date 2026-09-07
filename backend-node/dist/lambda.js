@@ -75270,13 +75270,6 @@ async function saveBundle(snapshot) {
     return bundle;
   });
 }
-async function saveBundleIdempotent(snapshot) {
-  const existing = await sql`
-    SELECT * FROM generated_bundle WHERE public_id = ${snapshot.publicId}
-  `;
-  if (existing.length > 0) return existing[0];
-  return saveBundle(snapshot);
-}
 async function findBundleByPublicId(publicId) {
   const bundles = await sql`
     SELECT gb.*,
@@ -75761,12 +75754,8 @@ generatedBundlesRouter.post(
       const parsed = BundleGenerationRequestSchema.parse(req.body);
       const userId = await tryExtractUserId(req);
       const { response, snapshot, templateCode } = await generate(parsed, productionRepos, userId);
-      const isAdmin = req.headers.authorization?.startsWith("Basic ") ?? false;
-      if (isAdmin) {
-        await saveBundle(snapshot);
-      } else {
-        putBundle(snapshot.publicId, snapshot, templateCode);
-      }
+      await saveBundle(snapshot);
+      putBundle(snapshot.publicId, snapshot, templateCode);
       res.status(201).json(response);
     } catch (err) {
       next(err);
@@ -95865,25 +95854,16 @@ checkoutRouter.post(
       }
       const { email, name, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
       for (const item of items) {
-        let bundleDbId;
-        const cached2 = getBundle(item.bundlePublicId);
-        if (cached2) {
-          const savedRow = await saveBundleIdempotent(cached2.snapshot);
-          evictBundle(item.bundlePublicId);
-          bundleDbId = savedRow.id;
-        } else {
-          const foundId = await findBundleIdByPublicId(item.bundlePublicId);
-          if (!foundId) {
-            res.status(422).json({
-              type: "about:validation-error",
-              title: "Bundle not found",
-              status: 422,
-              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
-              instance: req.path
-            });
-            return;
-          }
-          bundleDbId = foundId;
+        const bundleDbId = await findBundleIdByPublicId(item.bundlePublicId);
+        if (!bundleDbId) {
+          res.status(422).json({
+            type: "about:validation-error",
+            title: "Bundle not found",
+            status: 422,
+            detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+            instance: req.path
+          });
+          return;
         }
         await upsertCartItemExact(
           sid,
