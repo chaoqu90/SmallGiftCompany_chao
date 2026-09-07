@@ -6,6 +6,8 @@ import {
   Chip,
   CircularProgress,
   ClickAwayListener,
+  Collapse,
+  InputAdornment,
   MenuItem,
   Paper,
   Popover,
@@ -16,6 +18,9 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
 import { adminApi } from '../../api/admin'
@@ -32,11 +37,18 @@ const FORM_FACTORS  = ['BAG','BAR','CUBE','FLAT_RECT','IRREGULAR_VOLUME','OTHER'
 const MIN_AGES      = [3, 6, 9]
 const MAX_AGES      = [5, 8, 12]
 
+// SKU | Name | Category | Retail Price | Inventory | Status | expand arrow
+const NUM_COLS = 7
+
 export function AdminProductsPage() {
   const { authHeader } = useAdminAuth()
   const [products,       setProducts]       = useState<AdminProduct[]>([])
   const [loading,        setLoading]        = useState(true)
   const [error,          setError]          = useState<string | null>(null)
+  const [expandedId,     setExpandedId]     = useState<number | null>(null)
+  const [searchQuery,    setSearchQuery]    = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterStatus,   setFilterStatus]   = useState<'all' | 'active' | 'inactive'>('all')
   const [editingProduct, setEditingProduct] = useState<{ id: number; name: string } | null>(null)
   const [pricingProduct, setPricingProduct] = useState<{ id: number; name: string; cost: number; cogOverhead: number } | null>(null)
   const [addOpen,        setAddOpen]        = useState(false)
@@ -50,23 +62,36 @@ export function AdminProductsPage() {
       .finally(() => setLoading(false))
   }, [authHeader])
 
-  // Active rows first, then inactive; within each group sort by SKU
-  const sortedProducts = useMemo(() =>
-    [...products].sort((a, b) => {
-      if (a.active !== b.active) return a.active ? -1 : 1
-      return a.sku.localeCompare(b.sku)
-    }),
-    [products]
-  )
+  // Active rows first, then inactive; within each group sort by SKU.
+  // Apply keyword, category, and status filters on top.
+  const visibleProducts = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    return [...products]
+      .filter(p => {
+        if (filterStatus === 'active'   && !p.active) return false
+        if (filterStatus === 'inactive' &&  p.active) return false
+        if (filterCategory && p.category !== filterCategory) return false
+        if (q && !p.name.toLowerCase().includes(q) && !p.sku.toLowerCase().includes(q)) return false
+        return true
+      })
+      .sort((a, b) => {
+        if (a.active !== b.active) return a.active ? -1 : 1
+        return a.sku.localeCompare(b.sku)
+      })
+  }, [products, searchQuery, filterCategory, filterStatus])
+
+  const hasFilters = searchQuery.trim() !== '' || filterCategory !== '' || filterStatus !== 'all'
+
+  function handleToggleExpand(id: number) {
+    setExpandedId(prev => prev === id ? null : id)
+  }
 
   async function handleInventoryChange(id: number, quantity: number) {
     if (!authHeader) return
     try {
       const updated = await adminApi.updateInventory(authHeader, id, quantity)
       setProducts(prev => prev.map(p => p.id === id ? updated : p))
-    } catch {
-      // silent — field will revert on next render if state wasn't updated
-    }
+    } catch { /* silent */ }
   }
 
   async function handleActiveToggle(id: number, currentActive: boolean) {
@@ -74,9 +99,7 @@ export function AdminProductsPage() {
     try {
       const updated = await adminApi.setActive(authHeader, id, !currentActive)
       setProducts(prev => prev.map(p => p.id === id ? updated : p))
-    } catch {
-      // silent
-    }
+    } catch { /* silent */ }
   }
 
   async function handleFormFactorChange(id: number, formFactor: string) {
@@ -84,7 +107,6 @@ export function AdminProductsPage() {
     const current = products.find(p => p.id === id)
     if (!current) return
     try {
-      // Reuse /details endpoint — pass unchanged name+category alongside new formFactor
       const updated = await adminApi.updateDetails(authHeader, id, current.name, current.category, formFactor)
       setProducts(prev => prev.map(p => p.id === id ? updated : p))
     } catch { /* silent */ }
@@ -120,6 +142,7 @@ export function AdminProductsPage() {
     try {
       await adminApi.deleteProduct(authHeader, id)
       setProducts(prev => prev.filter(p => p.id !== id))
+      if (expandedId === id) setExpandedId(null)
     } catch (e: unknown) {
       const msg = (e instanceof Error) ? e.message : 'Delete failed'
       setDeleteError(
@@ -154,6 +177,66 @@ export function AdminProductsPage() {
           </Button>
         </Box>
 
+        {/* ── Filter bar ── */}
+        <Paper
+          variant="outlined"
+          sx={{ p: 1.5, mb: 2, display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap', borderColor: '#E5E5EA' }}
+        >
+          <TextField
+            size="small"
+            placeholder="Search name or SKU…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            sx={{ minWidth: 220, '& .MuiOutlinedInput-root': { fontSize: '0.875rem' } }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Typography sx={{ fontSize: '0.9rem', color: '#AEAEB2' }}>🔍</Typography>
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          <Select
+            size="small"
+            displayEmpty
+            value={filterCategory}
+            onChange={e => setFilterCategory(e.target.value)}
+            sx={{ minWidth: 160, fontSize: '0.875rem' }}
+          >
+            <MenuItem value="" sx={{ fontSize: '0.875rem', color: '#AEAEB2' }}>All Categories</MenuItem>
+            {CATEGORIES.map(c => (
+              <MenuItem key={c} value={c} sx={{ fontSize: '0.875rem' }}>{c}</MenuItem>
+            ))}
+          </Select>
+
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={filterStatus}
+            onChange={(_e, val) => { if (val) setFilterStatus(val) }}
+            sx={{ '& .MuiToggleButton-root': { fontSize: '0.75rem', px: 1.5, py: 0.5, textTransform: 'none', borderColor: '#E5E5EA' } }}
+          >
+            <ToggleButton value="all">All</ToggleButton>
+            <ToggleButton value="active">Active</ToggleButton>
+            <ToggleButton value="inactive">Inactive</ToggleButton>
+          </ToggleButtonGroup>
+
+          {hasFilters && (
+            <Button
+              size="small"
+              onClick={() => { setSearchQuery(''); setFilterCategory(''); setFilterStatus('all') }}
+              sx={{ fontSize: '0.75rem', color: '#AEAEB2', '&:hover': { color: '#F47F6B' } }}
+            >
+              Clear
+            </Button>
+          )}
+
+          <Typography sx={{ ml: 'auto', fontSize: '0.8rem', color: '#AEAEB2' }}>
+            {visibleProducts.length} of {products.length}
+          </Typography>
+        </Paper>
+
         {deleteError && (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>
             {deleteError}
@@ -175,21 +258,27 @@ export function AdminProductsPage() {
                 <TableRow sx={{ bgcolor: '#F7F7F5' }}>
                   <TableCell sx={{ fontWeight: 700 }}>SKU</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Name</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Form Factor</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Upgrade Tier</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Age Range</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Retail Price</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Inventory</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Interest Weight</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Delete</TableCell>
+                  <TableCell sx={{ width: 36 }} />
                 </TableRow>
               </TableHead>
               <TableBody>
-                {sortedProducts.map(product => (
-                  <ProductRow
+                {visibleProducts.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={NUM_COLS} sx={{ textAlign: 'center', py: 4, color: '#AEAEB2', fontSize: '0.875rem' }}>
+                      No products match the current filters.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {visibleProducts.map(product => (
+                  <ProductRows
                     key={product.id}
                     product={product}
+                    expanded={expandedId === product.id}
+                    onToggleExpand={() => handleToggleExpand(product.id)}
                     onInventoryChange={handleInventoryChange}
                     onActiveToggle={handleActiveToggle}
                     onEditAttributes={(id, name) => setEditingProduct({ id, name })}
@@ -233,21 +322,28 @@ export function AdminProductsPage() {
   )
 }
 
-interface ProductRowProps {
-  product:              AdminProduct
-  onInventoryChange:    (id: number, quantity: number) => void
-  onActiveToggle:       (id: number, currentActive: boolean) => void
-  onEditAttributes:     (id: number, name: string) => void
-  onPriceClick:         (id: number, name: string, cost: number, cogOverhead: number) => void
-  onFormFactorChange:   (id: number, formFactor: string) => void
-  onUpgradeTierChange:  (id: number, tier: string) => void
-  onAgeRangeChange:     (id: number, minAge: number, maxAge: number) => void
-  onDetailsChange:      (id: number, name: string, category: string, formFactor: string) => void
-  onDelete:             (id: number) => void
+// ─── ProductRows ──────────────────────────────────────────────────────────────
+// Renders the summary row + the collapsible detail row as a React fragment.
+
+interface ProductRowsProps {
+  product:             AdminProduct
+  expanded:            boolean
+  onToggleExpand:      () => void
+  onInventoryChange:   (id: number, quantity: number) => void
+  onActiveToggle:      (id: number, currentActive: boolean) => void
+  onEditAttributes:    (id: number, name: string) => void
+  onPriceClick:        (id: number, name: string, cost: number, cogOverhead: number) => void
+  onFormFactorChange:  (id: number, formFactor: string) => void
+  onUpgradeTierChange: (id: number, tier: string) => void
+  onAgeRangeChange:    (id: number, minAge: number, maxAge: number) => void
+  onDetailsChange:     (id: number, name: string, category: string, formFactor: string) => void
+  onDelete:            (id: number) => void
 }
 
-function ProductRow({
+function ProductRows({
   product,
+  expanded,
+  onToggleExpand,
   onInventoryChange,
   onActiveToggle,
   onEditAttributes,
@@ -257,15 +353,15 @@ function ProductRow({
   onAgeRangeChange,
   onDetailsChange,
   onDelete,
-}: ProductRowProps) {
+}: ProductRowsProps) {
   const [localQty,          setLocalQty]          = useState(String(product.inventoryQuantity))
   const [editingFormFactor, setEditingFormFactor] = useState(false)
   const [editingTier,       setEditingTier]       = useState(false)
 
   // Age range inline edit
-  const [editingAge,   setEditingAge]   = useState(false)
-  const [localMin,     setLocalMin]     = useState<number>(product.minAge)
-  const [localMax,     setLocalMax]     = useState<number>(product.maxAge)
+  const [editingAge, setEditingAge] = useState(false)
+  const [localMin,   setLocalMin]   = useState<number>(product.minAge)
+  const [localMax,   setLocalMax]   = useState<number>(product.maxAge)
   // Tracks whether any age-range Select dropdown is currently open.
   // Used to suppress ClickAwayListener firing on portal (dropdown) clicks.
   const ageSelectOpen = useRef(false)
@@ -276,24 +372,10 @@ function ProductRow({
   const [localDetailCat,  setLocalDetailCat]  = useState(product.category)
   const [localFormFactor, setLocalFormFactor] = useState(product.formFactor)
 
-  // Keep local qty in sync if parent updates (e.g. after a successful PATCH)
-  useEffect(() => {
-    setLocalQty(String(product.inventoryQuantity))
-  }, [product.inventoryQuantity])
-
-  useEffect(() => {
-    setLocalMin(product.minAge)
-    setLocalMax(product.maxAge)
-  }, [product.minAge, product.maxAge])
-
-  useEffect(() => {
-    setLocalName(product.name)
-  }, [product.name])
-
-  useEffect(() => {
-    setLocalDetailCat(product.category)
-    setLocalFormFactor(product.formFactor)
-  }, [product.category, product.formFactor])
+  useEffect(() => { setLocalQty(String(product.inventoryQuantity)) }, [product.inventoryQuantity])
+  useEffect(() => { setLocalMin(product.minAge); setLocalMax(product.maxAge) }, [product.minAge, product.maxAge])
+  useEffect(() => { setLocalName(product.name) }, [product.name])
+  useEffect(() => { setLocalDetailCat(product.category); setLocalFormFactor(product.formFactor) }, [product.category, product.formFactor])
 
   function commitQty() {
     const parsed = parseInt(localQty, 10)
@@ -303,29 +385,23 @@ function ProductRow({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      e.currentTarget.blur()
-    }
+    if (e.key === 'Enter') e.currentTarget.blur()
   }
 
   function handleMinChange(newMin: number) {
     setLocalMin(newMin)
     const validMaxes = MAX_AGES.filter(m => m > newMin)
-    if (!validMaxes.includes(localMax)) {
-      setLocalMax(validMaxes[0])
-    }
+    if (!validMaxes.includes(localMax)) setLocalMax(validMaxes[0])
   }
 
   function handleMaxChange(newMax: number) {
     setLocalMax(newMax)
-    // Explicit max selection — commit immediately and close
     onAgeRangeChange(product.id, localMin, newMax)
     setEditingAge(false)
   }
 
   // Called when clicking outside the age-range cell.
   // Skipped while a Select dropdown is open (portal clicks falsely trigger ClickAwayListener).
-  // The setTimeout delay lets onClose fire and clear the flag before we check it.
   function commitAgeAndClose() {
     if (ageSelectOpen.current) return
     const validMaxes = MAX_AGES.filter(m => m > localMin)
@@ -343,248 +419,286 @@ function ProductRow({
     setAnchorEl(null)
   }
 
-  // cogOverhead is not in the DTO; derive it from cogAdjusted - cost
   const cogOverhead = product.cogAdjusted - product.cost
 
   return (
-    <TableRow hover>
-      <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.sku}</TableCell>
-
-      {/* Name cell — click opens details popover */}
-      <TableCell>
-        <Typography
-          onClick={e => {
-            setLocalName(product.name)
-            setLocalDetailCat(product.category)
-            setLocalFormFactor(product.formFactor)
-            setAnchorEl(e.currentTarget)
-          }}
-          sx={{ fontSize: '0.875rem', cursor: 'pointer', '&:hover': { color: '#F47F6B' } }}
+    <>
+      {/* ── Summary row (clickable) ── */}
+      <TableRow
+        hover
+        onClick={onToggleExpand}
+        sx={{
+          cursor: 'pointer',
+          bgcolor: expanded ? '#FFF5F3' : 'inherit',
+          '& > *': { borderBottom: expanded ? 'unset' : undefined },
+        }}
+      >
+        <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{product.sku}</TableCell>
+        <TableCell sx={{ fontSize: '0.875rem' }}>{product.name}</TableCell>
+        <TableCell sx={{ fontSize: '0.875rem' }}>{product.category}</TableCell>
+        <TableCell sx={{ fontSize: '0.875rem', fontWeight: 600 }}>${product.retailPrice.toFixed(2)}</TableCell>
+        <TableCell sx={{ fontSize: '0.875rem' }}>{product.inventoryQuantity}</TableCell>
+        <TableCell
+          onClick={e => e.stopPropagation()}
+          sx={{ py: 0.5 }}
         >
-          {product.name}
-        </Typography>
-
-        <Popover
-          open={Boolean(anchorEl)}
-          anchorEl={anchorEl}
-          onClose={() => setAnchorEl(null)}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-          PaperProps={{ sx: { p: 2, width: 280, boxShadow: '0 4px 20px rgba(0,0,0,0.12)' } }}
-        >
-          <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Name</Typography>
-          <input
-            value={localName}
-            onChange={e => setLocalName(e.target.value)}
-            style={{ width: '100%', padding: '5px 8px', border: '1px solid #E5E5EA', borderRadius: 6, fontSize: '0.875rem', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }}
+          <Chip
+            label={product.active ? 'Active' : 'Inactive'}
+            size="small"
+            color={product.active ? 'success' : 'default'}
+            onClick={() => onActiveToggle(product.id, product.active)}
+            sx={{ cursor: 'pointer', minWidth: 72 }}
           />
-          <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Category</Typography>
-          <Select
-            value={localDetailCat}
-            onChange={e => setLocalDetailCat(e.target.value)}
-            size="small"
-            fullWidth
-            sx={{ mb: 1.5, fontSize: '0.8rem' }}
-          >
-            {CATEGORIES.map(c => <MenuItem key={c} value={c} sx={{ fontSize: '0.8rem' }}>{c}</MenuItem>)}
-          </Select>
-          <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Form Factor</Typography>
-          <Select
-            value={localFormFactor}
-            onChange={e => setLocalFormFactor(e.target.value)}
-            size="small"
-            fullWidth
-            sx={{ mb: 2, fontSize: '0.8rem' }}
-          >
-            {FORM_FACTORS.map(f => <MenuItem key={f} value={f} sx={{ fontSize: '0.8rem' }}>{f}</MenuItem>)}
-          </Select>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-            <Button size="small" onClick={() => setAnchorEl(null)} sx={{ color: '#6E6E73', fontSize: '0.75rem' }}>Cancel</Button>
-            <Button
-              size="small"
-              variant="contained"
-              onClick={saveDetails}
-              disabled={
-                localName.trim() === product.name &&
-                localDetailCat   === product.category &&
-                localFormFactor  === product.formFactor
-              }
-              sx={{ backgroundColor: '#F47F6B', '&:hover': { backgroundColor: '#e06b57' }, fontSize: '0.75rem' }}
-            >
-              Save
-            </Button>
-          </Box>
-        </Popover>
-      </TableCell>
+        </TableCell>
+        <TableCell sx={{ px: 1, color: '#AEAEB2', fontSize: '0.8rem', textAlign: 'center', userSelect: 'none' }}>
+          {expanded ? '▾' : '▸'}
+        </TableCell>
+      </TableRow>
 
-      {/* Form Factor column — synced with Name popover's form factor field */}
-      <TableCell sx={{ minWidth: 130 }}>
-        {editingFormFactor ? (
-          <Select
-            value={product.formFactor}
-            defaultOpen
-            onChange={e => { onFormFactorChange(product.id, e.target.value); setEditingFormFactor(false) }}
-            onClose={() => setEditingFormFactor(false)}
-            size="small"
-            sx={{ fontSize: '0.8rem', minWidth: 110, '.MuiOutlinedInput-notchedOutline': { borderColor: '#E5E5EA' } }}
-          >
-            {FORM_FACTORS.map(f => (
-              <MenuItem key={f} value={f} sx={{ fontSize: '0.8rem' }}>{f}</MenuItem>
-            ))}
-          </Select>
-        ) : (
-          <Typography
-            onClick={() => setEditingFormFactor(true)}
-            sx={{ fontSize: '0.875rem', cursor: 'pointer', '&:hover': { color: '#F47F6B' } }}
-          >
-            {product.formFactor}
-          </Typography>
-        )}
-      </TableCell>
+      {/* ── Detail panel (collapsible) ── */}
+      <TableRow>
+        <TableCell colSpan={NUM_COLS} sx={{ p: 0, borderBottom: expanded ? '1px solid #E5E5EA' : 'none' }}>
+          <Collapse in={expanded} timeout="auto" unmountOnExit>
+            <Box sx={{ px: 3, py: 2.5, bgcolor: '#FAFAFA', borderTop: '1px solid #F0F0F0' }}>
+              <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
 
-      <TableCell sx={{ minWidth: 100 }}>
-        {editingTier ? (
-          <Select
-            value={product.upgradeTier}
-            defaultOpen
-            onChange={e => { onUpgradeTierChange(product.id, e.target.value); setEditingTier(false) }}
-            onClose={() => setEditingTier(false)}
-            size="small"
-            sx={{ fontSize: '0.8rem', minWidth: 100, '.MuiOutlinedInput-notchedOutline': { borderColor: '#E5E5EA' } }}
-          >
-            {UPGRADE_TIERS.map(t => (
-              <MenuItem key={t} value={t} sx={{ fontSize: '0.8rem' }}>{t}</MenuItem>
-            ))}
-          </Select>
-        ) : (
-          <Typography
-            onClick={() => setEditingTier(true)}
-            sx={{ fontSize: '0.875rem', cursor: 'pointer', '&:hover': { color: '#F47F6B' } }}
-          >
-            {product.upgradeTier}
-          </Typography>
-        )}
-      </TableCell>
+                {/* ── Editable fields grid ── */}
+                <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2.5 }}>
 
-      {/* Age Range cell — between Upgrade Tier and Retail Price */}
-      <TableCell sx={{ minWidth: 110 }}>
-        {editingAge ? (
-          <ClickAwayListener onClickAway={commitAgeAndClose}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Select
-                value={localMin}
-                defaultOpen
-                onChange={e => handleMinChange(Number(e.target.value))}
-                onOpen={() => { ageSelectOpen.current = true }}
-                onClose={() => { setTimeout(() => { ageSelectOpen.current = false }, 0) }}
-                size="small"
-                sx={{ fontSize: '0.8rem', minWidth: 54, '.MuiOutlinedInput-notchedOutline': { borderColor: '#E5E5EA' } }}
-              >
-                {MIN_AGES.map(a => (
-                  <MenuItem key={a} value={a} sx={{ fontSize: '0.8rem' }}>{a}</MenuItem>
-                ))}
-              </Select>
-              <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73' }}>–</Typography>
-              <Select
-                value={localMax}
-                onChange={e => handleMaxChange(Number(e.target.value))}
-                onOpen={() => { ageSelectOpen.current = true }}
-                onClose={() => { setTimeout(() => { ageSelectOpen.current = false }, 0) }}
-                size="small"
-                sx={{ fontSize: '0.8rem', minWidth: 54, '.MuiOutlinedInput-notchedOutline': { borderColor: '#E5E5EA' } }}
-              >
-                {MAX_AGES.filter(m => m > localMin).map(a => (
-                  <MenuItem key={a} value={a} sx={{ fontSize: '0.8rem' }}>{a}</MenuItem>
-                ))}
-              </Select>
+                  {/* Name */}
+                  <Box>
+                    <Typography sx={labelSx}>Name</Typography>
+                    <Typography
+                      onClick={e => {
+                        setLocalName(product.name)
+                        setLocalDetailCat(product.category)
+                        setLocalFormFactor(product.formFactor)
+                        setAnchorEl(e.currentTarget)
+                      }}
+                      sx={editableSx}
+                    >
+                      {product.name}
+                    </Typography>
+                    <Popover
+                      open={Boolean(anchorEl)}
+                      anchorEl={anchorEl}
+                      onClose={() => setAnchorEl(null)}
+                      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+                      PaperProps={{ sx: { p: 2, width: 280, boxShadow: '0 4px 20px rgba(0,0,0,0.12)' } }}
+                    >
+                      <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Name</Typography>
+                      <input
+                        value={localName}
+                        onChange={e => setLocalName(e.target.value)}
+                        style={{ width: '100%', padding: '5px 8px', border: '1px solid #E5E5EA', borderRadius: 6, fontSize: '0.875rem', fontFamily: 'inherit', marginBottom: 10, boxSizing: 'border-box' }}
+                      />
+                      <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Category</Typography>
+                      <Select
+                        value={localDetailCat}
+                        onChange={e => setLocalDetailCat(e.target.value)}
+                        size="small"
+                        fullWidth
+                        sx={{ mb: 1.5, fontSize: '0.8rem' }}
+                      >
+                        {CATEGORIES.map(c => <MenuItem key={c} value={c} sx={{ fontSize: '0.8rem' }}>{c}</MenuItem>)}
+                      </Select>
+                      <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73', mb: 0.5 }}>Form Factor</Typography>
+                      <Select
+                        value={localFormFactor}
+                        onChange={e => setLocalFormFactor(e.target.value)}
+                        size="small"
+                        fullWidth
+                        sx={{ mb: 2, fontSize: '0.8rem' }}
+                      >
+                        {FORM_FACTORS.map(f => <MenuItem key={f} value={f} sx={{ fontSize: '0.8rem' }}>{f}</MenuItem>)}
+                      </Select>
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                        <Button size="small" onClick={() => setAnchorEl(null)} sx={{ color: '#6E6E73', fontSize: '0.75rem' }}>Cancel</Button>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          onClick={saveDetails}
+                          disabled={
+                            localName.trim() === product.name &&
+                            localDetailCat   === product.category &&
+                            localFormFactor  === product.formFactor
+                          }
+                          sx={{ backgroundColor: '#F47F6B', '&:hover': { backgroundColor: '#e06b57' }, fontSize: '0.75rem' }}
+                        >
+                          Save
+                        </Button>
+                      </Box>
+                    </Popover>
+                  </Box>
+
+                  {/* Form Factor */}
+                  <Box>
+                    <Typography sx={labelSx}>Form Factor</Typography>
+                    {editingFormFactor ? (
+                      <Select
+                        value={product.formFactor}
+                        defaultOpen
+                        onChange={e => { onFormFactorChange(product.id, e.target.value); setEditingFormFactor(false) }}
+                        onClose={() => setEditingFormFactor(false)}
+                        size="small"
+                        sx={{ fontSize: '0.8rem', minWidth: 120 }}
+                      >
+                        {FORM_FACTORS.map(f => <MenuItem key={f} value={f} sx={{ fontSize: '0.8rem' }}>{f}</MenuItem>)}
+                      </Select>
+                    ) : (
+                      <Typography onClick={() => setEditingFormFactor(true)} sx={editableSx}>
+                        {product.formFactor}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  {/* Upgrade Tier */}
+                  <Box>
+                    <Typography sx={labelSx}>Upgrade Tier</Typography>
+                    {editingTier ? (
+                      <Select
+                        value={product.upgradeTier}
+                        defaultOpen
+                        onChange={e => { onUpgradeTierChange(product.id, e.target.value); setEditingTier(false) }}
+                        onClose={() => setEditingTier(false)}
+                        size="small"
+                        sx={{ fontSize: '0.8rem', minWidth: 110 }}
+                      >
+                        {UPGRADE_TIERS.map(t => <MenuItem key={t} value={t} sx={{ fontSize: '0.8rem' }}>{t}</MenuItem>)}
+                      </Select>
+                    ) : (
+                      <Typography onClick={() => setEditingTier(true)} sx={editableSx}>
+                        {product.upgradeTier}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  {/* Age Range */}
+                  <Box>
+                    <Typography sx={labelSx}>Age Range</Typography>
+                    {editingAge ? (
+                      <ClickAwayListener onClickAway={commitAgeAndClose}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Select
+                            value={localMin}
+                            defaultOpen
+                            onChange={e => handleMinChange(Number(e.target.value))}
+                            onOpen={() => { ageSelectOpen.current = true }}
+                            onClose={() => { setTimeout(() => { ageSelectOpen.current = false }, 0) }}
+                            size="small"
+                            sx={{ fontSize: '0.8rem', minWidth: 54 }}
+                          >
+                            {MIN_AGES.map(a => <MenuItem key={a} value={a} sx={{ fontSize: '0.8rem' }}>{a}</MenuItem>)}
+                          </Select>
+                          <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73' }}>–</Typography>
+                          <Select
+                            value={localMax}
+                            onChange={e => handleMaxChange(Number(e.target.value))}
+                            onOpen={() => { ageSelectOpen.current = true }}
+                            onClose={() => { setTimeout(() => { ageSelectOpen.current = false }, 0) }}
+                            size="small"
+                            sx={{ fontSize: '0.8rem', minWidth: 54 }}
+                          >
+                            {MAX_AGES.filter(m => m > localMin).map(a => <MenuItem key={a} value={a} sx={{ fontSize: '0.8rem' }}>{a}</MenuItem>)}
+                          </Select>
+                        </Box>
+                      </ClickAwayListener>
+                    ) : (
+                      <Typography onClick={() => setEditingAge(true)} sx={editableSx}>
+                        {product.minAge}–{product.maxAge}
+                      </Typography>
+                    )}
+                  </Box>
+
+                  {/* Pricing */}
+                  <Box>
+                    <Typography sx={labelSx}>Pricing</Typography>
+                    <Box
+                      onClick={() => onPriceClick(product.id, product.name, product.cost, cogOverhead)}
+                      sx={{ cursor: 'pointer', display: 'inline-block' }}
+                    >
+                      <Typography sx={{ fontSize: '0.875rem', color: '#F47F6B', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}>
+                        ${product.retailPrice.toFixed(2)} retail
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73' }}>
+                        Cost ${product.cost.toFixed(2)} · COG ${product.cogAdjusted.toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Inventory */}
+                  <Box>
+                    <Typography sx={labelSx}>Inventory</Typography>
+                    <input
+                      type="number"
+                      value={localQty}
+                      min={0}
+                      onChange={e => setLocalQty(e.target.value)}
+                      onBlur={commitQty}
+                      onKeyDown={handleKeyDown}
+                      style={{
+                        width: 80,
+                        padding: '4px 8px',
+                        border: '1px solid #E5E5EA',
+                        borderRadius: 6,
+                        fontSize: '0.875rem',
+                        fontFamily: 'inherit',
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* ── Action buttons ── */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, minWidth: 190, pt: 0.5 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => onEditAttributes(product.id, product.name)}
+                    sx={{
+                      fontSize: '0.75rem',
+                      borderColor: '#E5E5EA',
+                      color: '#6E6E73',
+                      '&:hover': { borderColor: '#F47F6B', color: '#F47F6B' },
+                    }}
+                  >
+                    Modify Interest Weight
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => onDelete(product.id)}
+                    sx={{
+                      fontSize: '0.75rem',
+                      borderColor: '#ffcdd2',
+                      color: '#e57373',
+                      '&:hover': { borderColor: '#e57373', backgroundColor: '#fff5f5' },
+                    }}
+                  >
+                    Delete Product
+                  </Button>
+                </Box>
+              </Box>
             </Box>
-          </ClickAwayListener>
-        ) : (
-          <Typography
-            onClick={() => setEditingAge(true)}
-            sx={{ fontSize: '0.875rem', cursor: 'pointer', '&:hover': { color: '#F47F6B' } }}
-          >
-            {product.minAge}–{product.maxAge}
-          </Typography>
-        )}
-      </TableCell>
-
-      <TableCell>
-        <Box
-          onClick={() => onPriceClick(product.id, product.name, product.cost, cogOverhead)}
-          sx={{
-            cursor: 'pointer',
-            color: '#F47F6B',
-            fontWeight: 600,
-            '&:hover': { textDecoration: 'underline' },
-          }}
-        >
-          ${product.retailPrice.toFixed(2)}
-        </Box>
-      </TableCell>
-
-      <TableCell>
-        <input
-          type="number"
-          value={localQty}
-          min={0}
-          onChange={e => setLocalQty(e.target.value)}
-          onBlur={commitQty}
-          onKeyDown={handleKeyDown}
-          style={{
-            width: 72,
-            padding: '4px 6px',
-            border: '1px solid #E5E5EA',
-            borderRadius: 6,
-            fontSize: '0.875rem',
-            fontFamily: 'inherit',
-          }}
-        />
-      </TableCell>
-
-      <TableCell>
-        <Chip
-          label={product.active ? 'Active' : 'Inactive'}
-          size="small"
-          color={product.active ? 'success' : 'default'}
-          onClick={() => onActiveToggle(product.id, product.active)}
-          sx={{ cursor: 'pointer', minWidth: 72 }}
-        />
-      </TableCell>
-
-      <TableCell>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => onEditAttributes(product.id, product.name)}
-          sx={{
-            fontSize: '0.75rem',
-            py: 0.25,
-            borderColor: '#E5E5EA',
-            color: '#6E6E73',
-            '&:hover': { borderColor: '#F47F6B', color: '#F47F6B' },
-          }}
-        >
-          Modify
-        </Button>
-      </TableCell>
-
-      <TableCell>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => onDelete(product.id)}
-          sx={{
-            fontSize: '0.75rem',
-            py: 0.25,
-            borderColor: '#ffcdd2',
-            color: '#e57373',
-            '&:hover': { borderColor: '#e57373', backgroundColor: '#fff5f5' },
-          }}
-        >
-          Delete
-        </Button>
-      </TableCell>
-    </TableRow>
+          </Collapse>
+        </TableCell>
+      </TableRow>
+    </>
   )
+}
+
+// ─── Shared style constants ───────────────────────────────────────────────────
+
+const labelSx = {
+  fontSize: '0.7rem',
+  color: '#AEAEB2',
+  mb: 0.25,
+  textTransform: 'uppercase' as const,
+  letterSpacing: 0.5,
+}
+
+const editableSx = {
+  fontSize: '0.875rem',
+  cursor: 'pointer',
+  '&:hover': { color: '#F47F6B' },
 }

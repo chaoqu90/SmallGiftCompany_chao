@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box, Button, CircularProgress, Dialog, DialogActions,
   DialogContent, DialogTitle, MenuItem, Select, Stack, Typography,
@@ -48,6 +48,14 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
   const [minAge,      setMinAge]      = useState('3')
   const [maxAge,      setMaxAge]      = useState('12')
 
+  // Image upload state
+  const [imageFile,      setImageFile]      = useState<File | null>(null)
+  const [imagePreview,   setImagePreview]   = useState<string | null>(null)
+  const [imagePublicUrl, setImagePublicUrl] = useState<string | null>(null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageError,     setImageError]     = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   useEffect(() => {
     if (open && authHeader && !meta) {
       adminApi.getMeta(authHeader).then(setMeta).catch(() => {})
@@ -68,8 +76,52 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
       setMinAge('3')
       setMaxAge('12')
       setError(null)
+      setImageFile(null)
+      setImagePreview(null)
+      setImagePublicUrl(null)
+      setImageError(null)
     }
   }, [open])
+
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !authHeader) return
+
+    if (!file.type.startsWith('image/')) {
+      setImageError('Please select an image file (JPG, PNG, WebP, etc.)')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('Image must be smaller than 5 MB')
+      return
+    }
+
+    setImageFile(file)
+    setImagePreview(URL.createObjectURL(file))
+    setImagePublicUrl(null)
+    setImageError(null)
+    setUploadingImage(true)
+
+    try {
+      const { presignedUrl, publicUrl } = await adminApi.getImageUploadUrl(authHeader, file.name, file.type)
+      await adminApi.uploadImageToS3(presignedUrl, file)
+      setImagePublicUrl(publicUrl)
+    } catch {
+      setImageError('Image upload failed — product can still be saved without an image')
+      setImageFile(null)
+      setImagePreview(null)
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  function handleRemoveImage() {
+    setImageFile(null)
+    setImagePreview(null)
+    setImagePublicUrl(null)
+    setImageError(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
 
   const costNum     = parseFloat(cost)        || 0
   const overheadNum = parseFloat(cogOverhead) || 0
@@ -94,6 +146,7 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
       formFactor,
       minAge: parseInt(minAge) || 3,
       maxAge: parseInt(maxAge) || 12,
+      imageUrl: imagePublicUrl ?? null,
     }
     try {
       const created = await adminApi.createProduct(authHeader, data)
@@ -116,6 +169,71 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
           <Typography sx={{ color: 'error.main', mb: 2, fontSize: '0.875rem' }}>{error}</Typography>
         )}
         <Stack spacing={1.5}>
+
+          {/* ── Image upload ── */}
+          <Box>
+            <Typography sx={labelStyle}>Product Image</Typography>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={handleImageSelect}
+            />
+            {imagePreview ? (
+              <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                <Box
+                  component="img"
+                  src={imagePreview}
+                  alt="Preview"
+                  sx={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 2, border: '1px solid #E5E5EA', display: 'block' }}
+                />
+                {uploadingImage && (
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.7)', borderRadius: 2 }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                )}
+                {!uploadingImage && imagePublicUrl && (
+                  <Box sx={{ position: 'absolute', top: 4, right: 4, bgcolor: '#4caf50', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography sx={{ fontSize: '0.65rem', color: '#fff', lineHeight: 1 }}>✓</Typography>
+                  </Box>
+                )}
+                <Button
+                  size="small"
+                  onClick={handleRemoveImage}
+                  sx={{ mt: 0.5, fontSize: '0.7rem', color: '#e57373', p: 0, minWidth: 0, display: 'block' }}
+                >
+                  Remove
+                </Button>
+              </Box>
+            ) : (
+              <Box
+                onClick={() => fileInputRef.current?.click()}
+                sx={{
+                  width: 120,
+                  height: 120,
+                  border: '2px dashed #E5E5EA',
+                  borderRadius: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  gap: 0.5,
+                  '&:hover': { borderColor: '#F47F6B', bgcolor: '#FFF5F3' },
+                }}
+              >
+                <Typography sx={{ fontSize: '1.5rem' }}>📷</Typography>
+                <Typography sx={{ fontSize: '0.7rem', color: '#AEAEB2', textAlign: 'center', px: 1 }}>
+                  Click to upload
+                </Typography>
+              </Box>
+            )}
+            {imageError && (
+              <Typography sx={{ fontSize: '0.75rem', color: 'error.main', mt: 0.5 }}>{imageError}</Typography>
+            )}
+          </Box>
+
           <Box>
             <Typography sx={labelStyle}>SKU *</Typography>
             <input

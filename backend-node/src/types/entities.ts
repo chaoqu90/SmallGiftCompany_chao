@@ -122,6 +122,7 @@ export interface GeneratedBundleRow {
   id: number;
   public_id: string;
   session_id: string | null;
+  user_id: string | null;          // UUID — set when JWT present at generation time
   requested_age: number;
   audience_preference: string;     // AudiencePreference
   interest: string;                // Interest
@@ -175,6 +176,68 @@ export interface GeneratedBundleGiftBagRow {
   is_default: boolean;
   // Joined from gift_bag_option
   gift_bag_option_code?: string;
+}
+
+// ─── cart_item ────────────────────────────────────────────────────────────────
+
+export interface CartItemRow {
+  id: number;
+  session_id: string;
+  generated_bundle_id: number;
+  upgrade_tier: string;            // 'STANDARD' | 'PREMIUM'
+  gift_bag_option_id: number | null;
+  quantity: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ─── customer_order ───────────────────────────────────────────────────────────
+
+export interface CustomerOrderRow {
+  id: number;
+  public_id: string;
+  user_id: string | null;
+  session_id: string;
+  status: string;                  // PENDING | CONFIRMED | FULFILLED | COMPLETED | CANCELLED | REFUNDED
+  subtotal: string;                // NUMERIC(10,2) — postgres.js returns as string
+  total: string;                   // NUMERIC(10,2)
+  currency: string;
+  customer_email: string;
+  customer_name: string | null;
+  payment_intent_id: string | null;
+  payment_status: string | null;
+  notes: string | null;
+  shipping_street: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_zip: string | null;
+  shipping_country: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ─── order_line_item ──────────────────────────────────────────────────────────
+
+export interface OrderLineItemRow {
+  id: number;
+  customer_order_id: number;
+  generated_bundle_id: number;
+  upgrade_tier: string;
+  gift_bag_option_id: number | null;
+  quantity: number;
+  unit_price: string;              // NUMERIC(10,2)
+  line_total: string;              // NUMERIC(10,2)
+  gift_bag_name_snapshot: string | null;
+  gift_bag_price_snapshot: string | null; // NUMERIC(10,2)
+}
+
+// ─── user_profile ─────────────────────────────────────────────────────────────
+
+export interface UserProfileRow {
+  user_id:      string;
+  display_name: string | null;
+  phone_number: string | null;
+  created_at:   Date;
 }
 
 // ─── analytics_event ─────────────────────────────────────────────────────────

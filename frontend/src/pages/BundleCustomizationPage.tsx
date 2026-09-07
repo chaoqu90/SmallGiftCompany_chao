@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Box, Button, Container, Grid2, MenuItem, Select, Stack, Typography,
+  Alert, Box, Button, CircularProgress, Container, Grid2, MenuItem, Select, Stack, Typography,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { getGeneratedBundle } from '../api/generatedBundles'
@@ -10,6 +10,8 @@ import type { GeneratedBundleResponse, GeneratedBundleItemDto } from '../types/c
 import { ConfiguratorVisual } from '../components/ConfiguratorVisual'
 import { IncludedItemCard }   from '../components/IncludedItemCard'
 import { OptionCard }         from '../components/OptionCard'
+import { useCart } from '../contexts/CartContext'
+import { addToCart } from '../lib/cartApi'
 
 // ── Configurator palette (spec §14) ─────────────────────────────────────────
 
@@ -33,6 +35,7 @@ function bundleDisplayName(templateCode: string): string {
 export function BundleCustomizationPage() {
   const { bundleId } = useParams<{ bundleId: string }>()
   const navigate     = useNavigate()
+  const { sessionId, refreshCart } = useCart()
 
   const viewTracked = useRef(false)
 
@@ -40,6 +43,8 @@ export function BundleCustomizationPage() {
   const [loading,   setLoading]   = useState(true)
   const [error,     setError]     = useState<string | null>(null)
   const [continued, setContinued] = useState(false)
+  const [addingToCart, setAddingToCart] = useState(false)
+  const [cartError, setCartError] = useState<string | null>(null)
 
   const [highlightedSku,  setHighlightedSku]  = useState<string | null>(null)
   const [upgradeOptionId, setUpgradeOptionId] = useState<string>('standard')
@@ -48,6 +53,26 @@ export function BundleCustomizationPage() {
 
   useEffect(() => {
     if (!bundleId) return
+
+    // Check sessionStorage first — the bundle was just generated and is not yet in DB.
+    const cachedJson = sessionStorage.getItem(`bundle:${bundleId}`)
+    if (cachedJson) {
+      try {
+        const parsed = JSON.parse(cachedJson) as GeneratedBundleResponse
+        setBundle(parsed)
+        setGiftBagOptionId(parsed.giftBag?.code ?? 'classic')
+        setLoading(false)
+        if (!viewTracked.current) {
+          viewTracked.current = true
+          trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId })
+        }
+        return
+      } catch {
+        // Corrupt cache entry — fall through to API fetch
+        sessionStorage.removeItem(`bundle:${bundleId}`)
+      }
+    }
+
     let cancelled = false
     setLoading(true)
     setError(null)
@@ -401,24 +426,51 @@ export function BundleCustomizationPage() {
               Your selection is saved!
             </Typography>
           ) : (
-            <Button
-              variant="contained"
-              size="large"
-              onClick={() => setContinued(true)}
-              data-testid="continue-btn"
-              sx={{
-                backgroundColor: C.accent,
-                '&:hover': { backgroundColor: '#e06b57' },
-                fontSize: { xs: '0.85rem', sm: '1rem' },
-                py: 1,
-                minHeight: 52,
-                px: { xs: 2, sm: 3 },
-                flexShrink: 0,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              Continue with {quantity} Party Bag{quantity !== 1 ? 's' : ''} →
-            </Button>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
+              {cartError && (
+                <Alert severity="error" sx={{ mb: 0.5, fontSize: '0.8rem', py: 0 }}>
+                  {cartError}
+                </Alert>
+              )}
+              <Button
+                variant="contained"
+                size="large"
+                disabled={addingToCart}
+                startIcon={addingToCart ? <CircularProgress size={16} color="inherit" /> : null}
+                onClick={async () => {
+                  if (!bundle || !sessionId) return
+                  setCartError(null)
+                  setAddingToCart(true)
+                  try {
+                    await addToCart(sessionId, {
+                      bundlePublicId: bundle.generatedBundleId,
+                      upgradeTier: upgradeOptionId === 'upgraded' ? 'PREMIUM' : 'STANDARD',
+                      quantity,
+                    })
+                    // Bundle is now persisted in DB — clear the sessionStorage entry
+                    sessionStorage.removeItem(`bundle:${bundle.generatedBundleId}`)
+                    await refreshCart()
+                    navigate('/cart')
+                  } catch {
+                    setCartError('Could not add to cart. Please try again.')
+                  } finally {
+                    setAddingToCart(false)
+                  }
+                }}
+                data-testid="continue-btn"
+                sx={{
+                  backgroundColor: C.accent,
+                  '&:hover': { backgroundColor: '#e06b57' },
+                  fontSize: { xs: '0.85rem', sm: '1rem' },
+                  py: 1,
+                  minHeight: 52,
+                  px: { xs: 2, sm: 3 },
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {addingToCart ? 'Adding…' : `Continue with ${quantity} Party Bag${quantity !== 1 ? 's' : ''} →`}
+              </Button>
+            </Box>
           )}
         </Box>
 

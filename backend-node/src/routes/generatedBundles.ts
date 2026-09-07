@@ -14,16 +14,41 @@
  * injection is only used in unit tests via bundleGeneration.generate(request, repos).
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { jwtVerify } from 'jose';
 import { BundleGenerationRequestSchema } from '../types/dtos.js';
 import * as bundleGenerationService from '../services/bundleGeneration.js';
+import { buildResponse } from '../services/bundleGeneration.js';
 import * as generatedBundleService from '../services/generatedBundle.js';
 import * as productsRepo from '../repositories/products.js';
 import * as affinitiesRepo from '../repositories/affinities.js';
 import * as bundleTemplatesRepo from '../repositories/bundleTemplates.js';
 import * as budgetTiersRepo from '../repositories/budgetTiers.js';
 import * as giftBagOptionsRepo from '../repositories/giftBagOptions.js';
-import * as generatedBundlesRepo from '../repositories/generatedBundles.js';
+import { putBundle, getBundle } from '../lib/bundleCache.js';
 import type { GenerationRepos } from '../services/bundleGeneration.js';
+
+// Secret key for optional JWT extraction (same key used by jwtAuth middleware)
+const jwtSecretKey = process.env.SUPABASE_JWT_SECRET
+  ? new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET)
+  : null;
+
+/**
+ * Attempts to extract user UUID from Authorization: Bearer header.
+ * Returns null if no header, invalid token, or secret not configured.
+ * Never throws — failures are silently ignored so the route stays public.
+ */
+async function tryExtractUserId(req: Request): Promise<string | null> {
+  if (!jwtSecretKey) return null;
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  try {
+    const { payload } = await jwtVerify(token, jwtSecretKey, { algorithms: ['HS256'] });
+    return (payload.sub as string) ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export const generatedBundlesRouter = Router();
 
@@ -40,8 +65,6 @@ const productionRepos: GenerationRepos = {
   loadRoleAffinities: affinitiesRepo.loadRoleAffinities,
   loadOccasionAffinities: affinitiesRepo.loadOccasionAffinities,
   findDefaultGiftBag: giftBagOptionsRepo.findDefaultGiftBag,
-  saveBundle: generatedBundlesRepo.saveBundle,
-  findBundleByPublicId: generatedBundlesRepo.findBundleByPublicId,
 };
 
 /**
@@ -57,8 +80,13 @@ generatedBundlesRouter.post(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const parsed = BundleGenerationRequestSchema.parse(req.body);
-      const bundle = await bundleGenerationService.generate(parsed, productionRepos);
-      res.status(201).json(bundle);
+      // Optionally associate the bundle with the authenticated user (design.md §5)
+      // The endpoint remains public — userId is null for anonymous requests.
+      const userId = await tryExtractUserId(req);
+      const { response, snapshot, templateCode } = await bundleGenerationService.generate(parsed, productionRepos, userId);
+      // Cache the snapshot in memory; DB save is deferred to when the user adds to cart.
+      putBundle(snapshot.publicId, snapshot, templateCode);
+      res.status(201).json(response);
     } catch (err) {
       next(err);
     }
@@ -76,6 +104,14 @@ generatedBundlesRouter.get(
   '/:publicId',
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
+      // 1. Check in-memory cache first (bundle generated but not yet added to cart)
+      const cached = getBundle(req.params.publicId);
+      if (cached) {
+        res.status(200).json(buildResponse(cached.snapshot.publicId, cached.templateCode, cached.snapshot));
+        return;
+      }
+
+      // 2. Fall back to DB (bundle already saved via cart-add)
       const bundle = await generatedBundleService.getByPublicId(req.params.publicId);
 
       if (!bundle) {

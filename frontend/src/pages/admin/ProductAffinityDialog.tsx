@@ -4,7 +4,6 @@ import {
   DialogContent, DialogTitle, Divider, FormControlLabel, Stack, Typography,
 } from '@mui/material'
 import { adminApi } from '../../api/admin'
-import type { ProductAffinities } from '../../api/admin'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 
 const INTERESTS = ['POP_MUSIC', 'TOYS_PLAY', 'CUTE_MAGICAL', 'SPORTS', 'READING_PUZZLE']
@@ -43,10 +42,18 @@ export function ProductAffinityDialog({ productId, productName, onClose }: Props
     setError(null)
     adminApi.getAffinities(authHeader, productId)
       .then(data => {
-        const iw = data.interestWeights ?? {}
-        const aw = data.audienceWeights ?? {}
-        const rw = data.roleWeights ?? {}
-        const oc = new Set(data.occasions ?? [])
+        // Backend returns arrays of rows; transform to weight maps for the UI
+        const iw: Record<string, number> = {}
+        for (const r of data.interests) iw[r.interest] = Number(r.weight)
+
+        const aw: Record<string, number> = {}
+        for (const r of data.audiences) aw[r.audience] = Number(r.weight)
+
+        const rw: Record<string, number> = {}
+        for (const r of data.roles) rw[r.role] = Number(r.weight)
+
+        const oc = new Set(data.occasions.map(r => r.occasion))
+
         setInterests(iw);  setOrigInterests(iw)
         setAudiences(aw);  setOrigAudiences(aw)
         setRoles(rw);      setOrigRoles(rw)
@@ -76,11 +83,12 @@ export function ProductAffinityDialog({ productId, productName, onClose }: Props
     if (!authHeader || productId === null) return
     setSaving(true)
     setError(null)
-    const payload: ProductAffinities = {
-      interestWeights: interests,
-      audienceWeights: audiences,
-      roleWeights:     roles,
-      occasions:       Array.from(occasions),
+    // Transform UI weight maps back to the row-array shape the backend expects
+    const payload = {
+      interests: INTERESTS.filter(k => (interests[k] ?? 0) > 0).map(k => ({ interest: k, weight: interests[k] })),
+      audiences: AUDIENCES.filter(k => (audiences[k] ?? 0) > 0).map(k => ({ audience: k, weight: audiences[k] })),
+      roles:     ROLES.filter(k => (roles[k] ?? 0) > 0).map(k => ({ role: k, weight: roles[k] })),
+      occasions: Array.from(occasions).map(o => ({ occasion: o })),
     }
     try {
       await adminApi.updateAffinities(authHeader, productId, payload)

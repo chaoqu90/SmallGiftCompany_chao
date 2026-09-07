@@ -22,11 +22,7 @@ import { selectUpgrades, selectUpgradesForCeilingPath } from './upgradeGeneratio
 import type { findBudgetTierByCode } from '../repositories/budgetTiers.js';
 import type { findTemplateByCode } from '../repositories/bundleTemplates.js';
 import type { findDefaultGiftBag } from '../repositories/giftBagOptions.js';
-import type {
-  saveBundle,
-  findBundleByPublicId,
-  BundleSnapshot,
-} from '../repositories/generatedBundles.js';
+import type { BundleSnapshot } from '../repositories/generatedBundles.js';
 import type { loadInterestAffinities, loadAudienceAffinities, loadRoleAffinities, loadOccasionAffinities } from '../repositories/affinities.js';
 import type { findAllEligibleForGeneration } from '../repositories/products.js';
 
@@ -41,8 +37,6 @@ export interface GenerationRepos {
   loadRoleAffinities: typeof loadRoleAffinities;
   loadOccasionAffinities: typeof loadOccasionAffinities;
   findDefaultGiftBag: typeof findDefaultGiftBag;
-  saveBundle: typeof saveBundle;
-  findBundleByPublicId: typeof findBundleByPublicId;
 }
 
 /**
@@ -50,11 +44,15 @@ export interface GenerationRepos {
  *
  * Returns a GeneratedBundleResponse matching the Spring Boot contract exactly.
  * Throws BundleGenerationError with the appropriate failureCode on all failure paths.
+ *
+ * @param userId Optional authenticated user UUID — set when a valid JWT was present
+ *               on the request. Null/undefined for anonymous generations.
  */
 export async function generate(
   request: BundleGenerationRequest,
   repos: GenerationRepos,
-): Promise<GeneratedBundleResponse> {
+  userId?: string | null,
+): Promise<{ response: GeneratedBundleResponse; snapshot: BundleSnapshot; templateCode: string }> {
   // ── Step 1: Load and validate BudgetTier ────────────────────────────────
   const budgetTier = await repos.findBudgetTierByCode(request.budgetTierCode);
   if (!budgetTier) {
@@ -309,6 +307,7 @@ export async function generate(
 
   const snapshot: BundleSnapshot = {
     publicId,
+    userId: userId ?? null,
     requestedAge: request.age,
     audiencePreference: request.audiencePreference,
     interest: request.interest,
@@ -339,10 +338,12 @@ export async function generate(
     },
   };
 
-  await repos.saveBundle(snapshot);
-
-  // ── Step 11: Return response ─────────────────────────────────────────────
-  return buildResponse(publicId, template.code, snapshot);
+  // ── Step 10: Build and return response (DB save deferred to cart-add) ──────
+  return {
+    response: buildResponse(publicId, template.code, snapshot),
+    snapshot,
+    templateCode: template.code,
+  };
 }
 
 // ─── Helper functions ─────────────────────────────────────────────────────────
@@ -378,7 +379,7 @@ function isFeasible(
   return true;
 }
 
-function buildResponse(
+export function buildResponse(
   publicId: string,
   templateCode: string,
   snapshot: BundleSnapshot,

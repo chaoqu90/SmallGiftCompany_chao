@@ -9,3 +9,5 @@
 
 # OS
 .DS_Store
+/backend-node/node_modules/
+/.claude/

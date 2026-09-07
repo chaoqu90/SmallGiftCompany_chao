@@ -53,6 +53,7 @@ export interface BundleGiftBagSnapshot {
 
 export interface BundleSnapshot {
   publicId: string;
+  userId?: string | null;          // Optional — set when JWT present at generation time
   requestedAge: number;
   audiencePreference: string;
   interest: string;
@@ -90,12 +91,13 @@ export async function saveBundle(snapshot: BundleSnapshot): Promise<GeneratedBun
     // 1. Insert generated_bundle
     const bundles = await tx<GeneratedBundleRow[]>`
       INSERT INTO generated_bundle (
-        public_id, requested_age, audience_preference, interest, party_type,
+        public_id, user_id, requested_age, audience_preference, interest, party_type,
         budget_tier_id, bundle_template_id,
         base_retail_price, standard_item_cogs_snapshot,
         status, created_at
       ) VALUES (
         ${snapshot.publicId},
+        ${snapshot.userId ?? null},
         ${snapshot.requestedAge},
         ${snapshot.audiencePreference},
         ${snapshot.interest},

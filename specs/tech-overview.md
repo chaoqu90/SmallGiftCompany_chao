@@ -61,12 +61,21 @@ All request body validation uses Zod schemas that exactly replicate the Bean Val
 
 ## 5. Authentication
 
-HTTP Basic authentication is preserved for all `/admin/api/**` endpoints.
+### 5.1 Admin Authentication
+HTTP Basic authentication for all `/admin/api/**` endpoints.
 
 - Credentials are read from environment variables `ADMIN_USERNAME` and `ADMIN_PASSWORD`.
 - An Express middleware decodes the `Authorization: Basic <base64>` header and compares against env vars using a constant-time comparison.
-- Public endpoints (`/api/**`) require no authentication.
-- Session management is stateless (no cookies, no JWT).
+
+### 5.2 Customer Authentication (Supabase Auth)
+Optional JWT-based authentication for end-users via Supabase Auth.
+
+- Users sign in with email (magic link or password) via the Supabase client library in the frontend.
+- The frontend sends the Supabase JWT as `Authorization: Bearer <token>` on requests that benefit from identity (bundle generation, checkout).
+- Backend verifies JWTs using `jose`'s `jwtVerify()` with the `SUPABASE_JWT_SECRET` (HS256).
+- **Authentication is always optional for public endpoints** — all cart, bundle, and checkout flows work without login. JWT presence only enriches the record (attaches `user_id` to bundles and orders).
+- A `jwtAuth` middleware enforces authentication on protected user routes (`/api/orders`, `/api/profile`).
+- A lightweight `tryExtractUserId()` helper (used on public routes) silently returns `null` on missing or invalid tokens — never 401s.
 
 ---
 
@@ -96,16 +105,39 @@ Error type URIs:
 
 ---
 
-## 7. API Contract (frozen — must not change)
+## 7. API Contract
 
 ### Public Endpoints
 
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/api/health` | None | |
+| POST | `/api/generated-bundles` | None (JWT optional) | Attaches `user_id` if valid JWT present |
+| GET | `/api/generated-bundles/:publicId` | None | Serves from in-memory cache or DB |
+| POST | `/api/analytics/events` | None | |
+| GET | `/api/gift-bag-options` | None | |
+| POST | `/api/checkout/intent` | None (JWT optional) | Creates Stripe Payment Intent; requires `X-Session-Id` |
+| POST | `/api/webhooks/stripe` | Stripe signature | Raw body; creates confirmed order on `payment_intent.succeeded` |
+
+### Cart Endpoints (session-based, `X-Session-Id` header required)
+
 | Method | Path | Auth |
 |---|---|---|
-| GET | `/api/health` | None |
-| POST | `/api/generated-bundles` | None |
-| GET | `/api/generated-bundles/:publicId` | None |
-| POST | `/api/analytics/events` | None |
+| GET | `/api/cart` | None |
+| POST | `/api/cart/items` | None |
+| PATCH | `/api/cart/items/:id` | None |
+| DELETE | `/api/cart/items/:id` | None |
+| DELETE | `/api/cart` | None |
+
+### Authenticated User Endpoints (JWT required)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/orders` | Paginated order history for the signed-in user |
+| GET | `/api/orders/:publicId` | Single order detail |
+| GET | `/api/orders/search` | Public: `?orderNumber=&email=` — no JWT needed |
+| GET | `/api/profile` | User profile |
+| PUT | `/api/profile` | Update display name |
 
 ### Admin Endpoints (HTTP Basic, role ADMIN)
 
@@ -113,6 +145,7 @@ Error type URIs:
 |---|---|
 | GET | `/admin/api/products/` |
 | GET | `/admin/api/products/meta` |
+| GET | `/admin/api/products/upload-image/presign` | Returns presigned S3 PUT URL + public URL for direct browser upload |
 | POST | `/admin/api/products/` |
 | PATCH | `/admin/api/products/:id/inventory` |
 | PATCH | `/admin/api/products/:id/active` |
@@ -128,6 +161,9 @@ Error type URIs:
 | GET | `/admin/api/bundles/:publicId` |
 | GET | `/admin/api/dashboard/` |
 | GET | `/admin/api/dashboard/product-coverage` |
+| GET | `/admin/api/orders` | All orders, filterable by status |
+| GET | `/admin/api/orders/:publicId` | Order detail with shipping + bundle product items |
+| PATCH | `/admin/api/orders/:publicId/status` | Advance order status |
 
 ---
 
@@ -268,6 +304,7 @@ Everything is declared in `infra/serverless.yml` — a single CloudFormation sta
 | `FrontendBucketName` | S3 bucket name (used by `aws s3 sync`) |
 | `CloudFrontDomainName` | CloudFront raw domain — use as CNAME target in GoDaddy DNS |
 | `CloudFrontDistributionId` | Distribution ID (used by `aws cloudfront create-invalidation`) |
+| `ProductImagesBucketName` | S3 bucket for product images (public read, for reference / ops) |
 
 ---
 
@@ -345,7 +382,153 @@ Everything is declared in `infra/serverless.yml` — a single CloudFormation sta
 
 ---
 
-## 15. Key Constraints Summary
+## 15. Cart & Order Architecture
+
+### 15.1 Session-Based Cart
+- Cart state is keyed by a `session_id` UUID generated client-side at app load and stored in `localStorage`.
+- Every cart request sends `X-Session-Id: <uuid>` header. The backend uses this as the cart owner — no login required.
+- A `sessionMiddleware` Express middleware validates this header and attaches `req.sessionId`.
+- `UNIQUE(session_id, generated_bundle_id)` on `cart_item` prevents duplicate inserts; add-to-cart uses `INSERT ... ON CONFLICT DO UPDATE` (upsert increments quantity).
+
+### 15.2 Deferred Bundle Persistence
+- `generated_bundle` rows are **not** saved when a bundle is generated. They are saved only when the user adds the bundle to cart.
+- Between generation and cart-add, the `BundleSnapshot` (including internal DB IDs) is held in a process-local in-memory TTL cache (`src/lib/bundleCache.ts`, 30-minute expiry).
+- `GET /api/generated-bundles/:publicId` checks the in-memory cache first, then falls back to the DB.
+- The frontend stores the `GeneratedBundleResponse` in `sessionStorage` so the configurator page loads without a network call (the bundle isn't in DB yet).
+- On cache miss at cart-add time, the route returns 404 — the user must regenerate. This is an accepted edge case for users who leave the configurator idle for 30+ minutes.
+
+### 15.3 Order Lifecycle
+Order statuses and valid forward transitions:
+
+```
+PENDING → CONFIRMED → FULFILLED → COMPLETED
+       ↘ CANCELLED              ↗ CANCELLED
+CONFIRMED → REFUNDED
+FULFILLED → REFUNDED
+```
+
+`PENDING` is only used by the legacy `POST /api/orders` endpoint (kept for admin/testing). All Stripe-initiated orders start as `CONFIRMED` directly.
+
+### 15.4 Price Computation
+Unit price for a cart item is always computed server-side:
+```
+unitPrice = base_retail_price + upgrade_adjustment + gift_bag_adjustment
+```
+Where adjustments come from `generated_bundle_upgrade.standard_retail_adjustment_snapshot` / `retail_price_adjustment_snapshot` and `gift_bag_option.retail_price_adjustment`. Browser-supplied prices are never trusted.
+
+---
+
+## 16. Payment Architecture
+
+### 16.1 Two-Phase Stripe Flow
+```
+Frontend                    Backend                     Stripe
+   │                           │                           │
+   │── POST /checkout/intent ──▶│                           │
+   │   (email, shipping,        │── paymentIntents.create ──▶│
+   │    X-Session-Id)           │   (amount, metadata)      │
+   │◀── { clientSecret } ──────│◀── { client_secret } ─────│
+   │                           │                           │
+   │── stripe.confirmPayment() ──────────────────────────▶ │
+   │◀── redirect to /orders/confirmation ──────────────── │
+   │                           │                           │
+   │                           │◀── POST /webhooks/stripe ─│
+   │                           │   (payment_intent.succeeded)
+   │                           │── createOrder() ──▶ DB    │
+   │                           │── sendEmail() ────▶ SG    │
+   │                           │── return 200 ─────────────▶│
+```
+
+### 16.2 Webhook Design
+- Mounted with `express.raw({ type: 'application/json' })` **before** `express.json()` to preserve the raw body for Stripe signature verification (`stripe.webhooks.constructEvent()`).
+- Returns `200` on success; returns `500` on processing errors (Stripe retries on non-2xx).
+- `confirmOrder()` is idempotent — checks `payment_intent_id` existence before inserting; safe for duplicate webhook delivery.
+
+### 16.3 Checkout Metadata Strategy
+All data needed to create the order is stored as Payment Intent metadata at intent-creation time:
+`sessionId`, `email`, `name`, `shippingStreet`, `shippingCity`, `shippingState`, `shippingZip`, `shippingCountry`, `userId`.
+The webhook reads these fields directly — no additional DB lookups or client re-submission required.
+
+### 16.4 Email (AWS SES)
+- `src/lib/email.ts` uses `@aws-sdk/client-ses`. The `SESClient` is initialised at module scope for Lambda warm-reuse.
+- No API key — authentication uses the Lambda execution role's IAM permissions (`ses:SendEmail`). For local dev, standard AWS credential chain applies (`aws configure` / `AWS_PROFILE`).
+- Called after the transaction commits (outside `sql.begin()`) so an SES failure never rolls back the order.
+- Fails silently (logs a warning) on any send error — order creation always succeeds regardless of email delivery.
+
+### 16.5 New Environment Variables
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | Backend | Stripe server-side API key (`sk_test_...` / `sk_live_...`) |
+| `STRIPE_WEBHOOK_SECRET` | Backend | Webhook signing secret (`whsec_...`) |
+| `EMAIL_FROM` | Backend | From address for SES confirmation emails (must be verified in SES Identities) |
+| `FRONTEND_URL` | Backend | Base URL for links in emails |
+| `AWS_REGION` | Backend | SES/S3 region (set automatically in Lambda; set explicitly for local dev) |
+| `SUPABASE_JWT_SECRET` | Backend | HS256 secret for verifying Supabase-issued JWTs |
+| `VITE_STRIPE_PUBLISHABLE_KEY` | Frontend | Stripe publishable key (`pk_test_...` / `pk_live_...`) |
+| `VITE_SUPABASE_URL` | Frontend | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Frontend | Supabase anon/public key |
+
+---
+
+## 17. Product Image Architecture
+
+### 17.1 Upload Flow
+
+```
+Admin Browser              Backend (Lambda)              S3 (ProductImagesBucket)
+     │                           │                               │
+     │─ GET /upload-image/presign ─▶│                               │
+     │   ?filename=&contentType=  │── getSignedUrl(PutObject) ───▶│
+     │◀─ { presignedUrl, publicUrl }│                               │
+     │                           │                               │
+     │─── PUT <presignedUrl> (file body) ────────────────────────▶│
+     │◀─── 200 OK ───────────────────────────────────────────────│
+     │                           │                               │
+     │─ POST /admin/api/products/ ─▶│                               │
+     │   { ..., imageUrl: publicUrl }│── INSERT product (image_url) │
+     │◀─ 201 { ..., imageUrl } ───│                               │
+```
+
+### 17.2 Infrastructure
+
+- **`ProductImagesBucket`** — dedicated S3 bucket with:
+  - Public `s3:GetObject` bucket policy (images are publicly readable via URL)
+  - CORS rule: `AllowedMethods: [PUT]`, `AllowedOrigins: [*]`, `AllowedHeaders: [*]` — required for the browser to PUT directly to S3
+  - All public access blocks disabled (images must be publicly readable)
+- **Lambda IAM**: `s3:PutObject` and `s3:PutObjectAcl` on `ProductImagesBucket/*` (needed to sign presigned PUT URLs)
+- **`PRODUCT_IMAGES_BUCKET`** env var injected into Lambda via `!Ref ProductImagesBucket` in `serverless.yml`
+
+### 17.3 Presign Endpoint
+
+`GET /admin/api/products/upload-image/presign` (HTTP Basic auth required)
+
+Query params:
+- `filename` — original filename; extension is extracted to derive the S3 object key extension
+- `contentType` — must match `image/*`; validated by the backend
+
+Response:
+```json
+{ "presignedUrl": "https://s3.amazonaws.com/...", "publicUrl": "https://<bucket>.s3.amazonaws.com/product-images/<uuid>.<ext>", "key": "product-images/<uuid>.<ext>" }
+```
+
+- Presigned URL expires in 5 minutes
+- Object key: `product-images/<uuid>.<ext>` (UUID prevents collisions)
+- Registered before `/:id` routes so Express does not interpret `upload-image` as a numeric product ID
+
+### 17.4 Schema
+
+`image_url VARCHAR` already exists on the `product` table (migration 001). No new migration is required.
+
+### 17.5 Environment Variable
+
+| Variable | Where | Purpose |
+|---|---|---|
+| `PRODUCT_IMAGES_BUCKET` | Backend | S3 bucket name for product images. Set automatically via `!Ref ProductImagesBucket` in Lambda. For local dev, set manually in `.env`. |
+
+---
+
+## 18. Key Constraints Summary
 
 1. The `postgres.js` client must have `prepare: false` (Supavisor transaction mode requirement).
 2. The DB client must be initialized outside the Lambda handler (cold-start reuse).
@@ -355,3 +538,8 @@ Everything is declared in `infra/serverless.yml` — a single CloudFormation sta
 6. Admin endpoints are protected by HTTP Basic auth with constant-time credential comparison.
 7. Bundle snapshot fields are copied at generation time and never mutated.
 8. Analytics events have no foreign key to `generated_bundle` (intentional for survivability).
+9. Bundle DB persistence is deferred to cart-add time — unsaved bundles live only in the in-memory TTL cache.
+10. The Stripe webhook route must be mounted before `express.json()` (raw body requirement).
+11. `confirmOrder()` must be idempotent — Stripe may deliver `payment_intent.succeeded` more than once.
+12. Product images are uploaded directly from the browser to S3 via presigned PUT URLs — image files never pass through Lambda.
+13. The `upload-image/presign` route must be registered before `/:id` routes to avoid Express treating the path segment as a numeric product ID.

@@ -21,6 +21,9 @@
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { basicAuth } from '../../middleware/auth.js';
 import { CreateProductRequestSchema, AffinityPayloadSchema } from '../../types/dtos.js';
 import * as productsRepo from '../../repositories/products.js';
@@ -39,6 +42,35 @@ export const adminProductsRouter = Router();
 
 // Apply auth to all routes in this router
 adminProductsRouter.use(basicAuth);
+
+// S3 client — module-scope singleton (Lambda warm-reuse)
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
+
+// ─── DTO mapper ───────────────────────────────────────────────────────────────
+
+/**
+ * Maps a snake_case ProductRow from the DB to the camelCase shape
+ * the frontend AdminProduct interface expects.
+ * NUMERIC columns come back as strings from postgres.js — parse to number here.
+ */
+function toProductDto(p: import('../../types/entities.js').ProductRow) {
+  return {
+    id:                p.id,
+    sku:               p.sku,
+    name:              p.name,
+    active:            p.active,
+    inventoryQuantity: p.inventory_quantity,
+    cost:              Number(p.cost),
+    cogAdjusted:       Number(p.cog_adjusted),
+    retailPrice:       Number(p.retail_price),
+    upgradeTier:       p.upgrade_tier,
+    category:          p.category,
+    formFactor:        p.form_factor,
+    minAge:            p.min_age,
+    maxAge:            p.max_age,
+    imageUrl:          p.image_url ?? null,
+  };
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +105,7 @@ adminProductsRouter.get(
   async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const products = await productsRepo.listProducts();
-      res.json(products);
+      res.json(products.map(toProductDto));
     } catch (err) {
       next(err);
     }
@@ -105,6 +137,73 @@ adminProductsRouter.get(
 );
 
 /**
+ * GET /admin/api/products/upload-image/presign
+ *
+ * Returns a short-lived presigned S3 PUT URL so the admin browser can upload
+ * a product image directly to S3 without routing the file through Lambda.
+ *
+ * Query params:
+ *   filename    — original filename (used to derive extension only)
+ *   contentType — MIME type (must be image/*)
+ *
+ * Response: { presignedUrl: string, publicUrl: string, key: string }
+ *
+ * IMPORTANT: registered before /:id routes so Express doesn't treat
+ * "upload-image" as a product id.
+ */
+adminProductsRouter.get(
+  '/upload-image/presign',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const bucket = process.env.PRODUCT_IMAGES_BUCKET;
+      if (!bucket) {
+        res.status(503).json({
+          type: 'about:configuration-error',
+          title: 'Service Unavailable',
+          status: 503,
+          detail: 'PRODUCT_IMAGES_BUCKET is not configured',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const schema = z.object({
+        filename:    z.string().min(1).max(200),
+        contentType: z.string().regex(/^image\//),
+      });
+
+      const parsed = schema.safeParse(req.query);
+      if (!parsed.success) {
+        res.status(400).json({
+          type: 'about:validation-error',
+          title: 'Bad Request',
+          status: 400,
+          detail: 'filename and contentType (image/*) are required',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const ext = parsed.data.filename.split('.').pop()?.toLowerCase() ?? 'jpg';
+      const key = `product-images/${randomUUID()}.${ext}`;
+
+      const command = new PutObjectCommand({
+        Bucket:      bucket,
+        Key:         key,
+        ContentType: parsed.data.contentType,
+      });
+
+      const presignedUrl = await getSignedUrl(s3, command, { expiresIn: 300 }); // 5 min
+      const publicUrl    = `https://${bucket}.s3.amazonaws.com/${key}`;
+
+      res.json({ presignedUrl, publicUrl, key });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
  * POST /admin/api/products
  *
  * Creates a product. cogAdjusted and retailPrice are computed server-side;
@@ -116,7 +215,7 @@ adminProductsRouter.post(
     try {
       const data = CreateProductRequestSchema.parse(req.body);
       const product = await productsRepo.createProduct(data);
-      res.status(201).json(product);
+      res.status(201).json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -149,7 +248,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -182,7 +281,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -218,7 +317,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -251,7 +350,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -284,7 +383,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -320,7 +419,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }
@@ -357,7 +456,7 @@ adminProductsRouter.patch(
         });
         return;
       }
-      res.json(product);
+      res.json(toProductDto(product));
     } catch (err) {
       next(err);
     }

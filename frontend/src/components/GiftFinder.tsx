@@ -152,6 +152,9 @@ export function GiftFinder() {
         budgetTierCode:     priceToTier(maxPrice),
         maxRetailPrice:     maxPrice >= PRICE_MAX ? null : maxPrice,
       })
+      // Cache the full response in sessionStorage so the configurator page can
+      // load without a network round-trip (the bundle isn't in DB yet).
+      sessionStorage.setItem(`bundle:${response.generatedBundleId}`, JSON.stringify(response))
       navigate(`/bundleCustomization/${response.generatedBundleId}`)
       trackEvent({ eventType: 'FINDER_COMPLETED', bundleId: response.generatedBundleId })
     } catch {

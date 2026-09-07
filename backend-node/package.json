@@ -7,15 +7,18 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "node --env-file=.env ./node_modules/.bin/tsx watch src/server.ts",
     "build": "node esbuild.config.js",
     "lint": "eslint src --ext .ts",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:all": "vitest run",
-    "migrate": "node-pg-migrate up",
-    "migrate:down": "node-pg-migrate down",
-    "migrate:status": "node-pg-migrate status"
+    "migrate": "node-pg-migrate --tsx up",
+    "migrate:down": "node-pg-migrate --tsx down",
+    "migrate:status": "node-pg-migrate --tsx status",
+    "migrate:local": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx up",
+    "migrate:local:down": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx down",
+    "migrate:local:status": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx status"
   },
   "node-pg-migrate": {
     "migrationsTable": "pgmigrations",
@@ -24,10 +27,15 @@
     "tsconfig": "tsconfig.json"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1127.0",
+    "@aws-sdk/client-ses": "^3.1127.0",
+    "@aws-sdk/s3-request-presigner": "^3.1127.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "jose": "^6.2.10",
     "postgres": "^3.4.4",
     "serverless-http": "^3.2.0",
+    "stripe": "^22.6.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

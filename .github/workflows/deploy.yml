@@ -14,11 +14,14 @@ name: Deploy
 #   ADMIN_PASSWORD           — HTTP Basic auth password
 #   AWS_ACCESS_KEY_ID        — IAM user key (needs Lambda, API GW, S3, CloudFront, CFn)
 #   AWS_SECRET_ACCESS_KEY    — IAM user secret
+#   SUPABASE_JWT_SECRET      — JWT secret from Supabase dashboard (Project Settings → API)
 #
 # GitHub Variables required (Settings → Secrets and variables → Actions → Variables):
 #   FRONTEND_DOMAIN       — www.smallgift.shop
 #   ACM_CERTIFICATE_ARN   — arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID
 #                           (must be issued in us-east-1; see production-deployment.md §6.2)
+#   VITE_SUPABASE_URL     — Supabase project URL (e.g. https://xyzabc.supabase.co)
+#   VITE_SUPABASE_ANON_KEY — Supabase anon/public key (safe to embed in browser JS)
 
 on:
   push:
@@ -36,6 +39,7 @@ jobs:
       CORS_ALLOWED_ORIGIN: ${{ secrets.CORS_ALLOWED_ORIGIN }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
       # GitHub Actions Variables (non-sensitive — visible in logs)
       FRONTEND_DOMAIN: ${{ vars.FRONTEND_DOMAIN }}
       ACM_CERTIFICATE_ARN: ${{ vars.ACM_CERTIFICATE_ARN }}
@@ -137,12 +141,15 @@ jobs:
         run: npm ci
 
       # Build the React SPA.
-      # VITE_API_BASE_URL is embedded at build time by Vite into import.meta.env.
-      # It points at the API Gateway URL from the backend deploy job.
+      # VITE_* variables are embedded at build time by Vite into import.meta.env.
+      # VITE_API_BASE_URL points at the API Gateway URL from the backend deploy job.
+      # VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY come from GitHub Actions Variables.
       - name: Build frontend
         working-directory: frontend
         env:
           VITE_API_BASE_URL: ${{ needs.deploy-backend.outputs.api_url }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Configure AWS credentials

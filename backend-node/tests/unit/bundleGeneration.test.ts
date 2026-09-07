@@ -154,23 +154,6 @@ function makeRepos(overrides: Partial<GenerationRepos> = {}): GenerationRepos {
     loadRoleAffinities: async () => roleRows,
     loadOccasionAffinities: async () => occasionRows,
     findDefaultGiftBag: async () => giftBag,
-    saveBundle: async () => ({
-      id: 1,
-      public_id: 'gb_test123456',
-      session_id: null,
-      requested_age: 7,
-      audience_preference: 'FEMININE',
-      interest: 'CUTE_MAGICAL',
-      party_type: 'CELEBRATION',
-      budget_tier_id: 1,
-      bundle_template_id: 1,
-      base_retail_price: '8.00',
-      standard_item_cogs_snapshot: '4.00',
-      status: 'GENERATED',
-      created_at: new Date(),
-      expires_at: null,
-    }),
-    findBundleByPublicId: async () => null,
     ...overrides,
   };
 }
@@ -189,44 +172,22 @@ const BASE_REQUEST: BundleGenerationRequest = {
 describe('generate — PATH 1 (unconstrained)', () => {
   it('returns a GeneratedBundleResponse with correct shape when maxRetailPrice is null', async () => {
     const repos = makeRepos();
-    const result = await generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos);
+    const { response } = await generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos);
 
-    expect(result).toMatchObject({
+    expect(response).toMatchObject({
       generatedBundleId: expect.stringMatching(/^gb_[a-f0-9]{12}$/),
       templateCode: 'GENERAL_4_ITEM',
       items: expect.arrayContaining([expect.objectContaining({ slotCode: 'UTILITY' })]),
     });
-    expect(result.items).toHaveLength(4);
+    expect(response.items).toHaveLength(4);
   });
 
   it('selects the highest-scoring product for each slot', async () => {
     // Product 1 has highest interest score for UTILITY slot
-    let utilityChosen = '';
-    const repos = makeRepos({
-      saveBundle: async (snapshot) => {
-        const utilityItem = snapshot.items.find(i => i.slotCode === 'UTILITY');
-        utilityChosen = utilityItem?.skuSnapshot ?? '';
-        return {
-          id: 1,
-          public_id: snapshot.publicId,
-          session_id: null,
-          requested_age: 7,
-          audience_preference: 'FEMININE',
-          interest: 'CUTE_MAGICAL',
-          party_type: 'CELEBRATION',
-          budget_tier_id: 1,
-          bundle_template_id: 1,
-          base_retail_price: '8.00',
-          standard_item_cogs_snapshot: '4.00',
-          status: 'GENERATED',
-          created_at: new Date(),
-          expires_at: null,
-        };
-      },
-    });
-
-    await generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos);
-    expect(utilityChosen).toBe('PROD-001'); // Product 1 fills UTILITY slot
+    const repos = makeRepos();
+    const { snapshot } = await generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos);
+    const utilityItem = snapshot.items.find(i => i.slotCode === 'UTILITY');
+    expect(utilityItem?.skuSnapshot).toBe('PROD-001'); // Product 1 fills UTILITY slot
   });
 });
 
@@ -234,13 +195,13 @@ describe('generate — PATH 2 (constrained)', () => {
   it('respects budget ceiling with maxRetailPrice set', async () => {
     const repos = makeRepos();
     // Each product is $2, so 4 × $2 = $8 total, plus upgrade reservation
-    const result = await generate({ ...BASE_REQUEST, maxRetailPrice: 20 }, repos);
+    const { response } = await generate({ ...BASE_REQUEST, maxRetailPrice: 20 }, repos);
 
-    expect(result).toMatchObject({
+    expect(response).toMatchObject({
       generatedBundleId: expect.stringMatching(/^gb_/),
       items: expect.arrayContaining([]),
     });
-    expect(result.items).toHaveLength(4);
+    expect(response.items).toHaveLength(4);
   });
 });
 
@@ -285,8 +246,8 @@ describe('generate — PATH 3 (tight fallback)', () => {
       ],
     });
 
-    const result = await generate({ ...BASE_REQUEST, maxRetailPrice: 8 }, repos);
-    expect(result.items).toHaveLength(4);
+    const { response } = await generate({ ...BASE_REQUEST, maxRetailPrice: 8 }, repos);
+    expect(response.items).toHaveLength(4);
   });
 });
 

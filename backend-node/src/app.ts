@@ -25,11 +25,28 @@ import { adminProductsRouter } from './routes/admin/products.js';
 import { adminBundlesRouter } from './routes/admin/bundles.js';
 import { adminDashboardRouter } from './routes/admin/dashboard.js';
 
+// User routers (FEAT-001 — Supabase JWT auth applied inside the router)
+import { userProfileRouter } from './routes/user/profile.js';
+
+// Cart & Order routers (FEAT-002)
+import { userCartRouter }    from './routes/user/cart.js';
+import { userOrdersRouter }  from './routes/user/orders.js';
+import { adminOrdersRouter } from './routes/admin/orders.js';
+import { giftBagOptionsRouter } from './routes/giftBagOptions.js';
+
+// Payment routers (FEAT-003)
+import { checkoutRouter } from './routes/checkout.js';
+import { webhookRouter }  from './routes/webhooks.js';
+
 export function createApp() {
   const app = express();
 
   // ── Global middleware ────────────────────────────────────────────────────
   app.use(cors(corsOptions));
+
+  // ── Stripe webhook — MUST be before express.json() (needs raw body) ─────
+  app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }), webhookRouter);
+
   app.use(express.json());
 
   // ── Public routes ────────────────────────────────────────────────────────
@@ -41,6 +58,18 @@ export function createApp() {
   app.use('/admin/api/products', adminProductsRouter);
   app.use('/admin/api/bundles', adminBundlesRouter);
   app.use('/admin/api/dashboard', adminDashboardRouter);
+
+  // ── User routes (FEAT-001 — JWT auth enforced inside router) ─────────────
+  app.use('/api/user/profile', userProfileRouter);
+
+  // ── Cart & Order routes (FEAT-002) ────────────────────────────────────────
+  app.use('/api/cart',               userCartRouter);
+  app.use('/api/orders',             userOrdersRouter);
+  app.use('/api/gift-bag-options',   giftBagOptionsRouter);
+  app.use('/admin/api/orders',       adminOrdersRouter);
+
+  // ── Payment routes (FEAT-003) ─────────────────────────────────────────────
+  app.use('/api/checkout', checkoutRouter);
 
   // ── Error handler (MUST be last) ─────────────────────────────────────────
   app.use(errorHandler);

@@ -24,7 +24,7 @@ export async function listAllActiveTemplates(): Promise<BundleTemplateWithSlots[
 
   const slots = await sql<BundleTemplateSlotRow[]>`
     SELECT * FROM bundle_template_slot
-    WHERE bundle_template_id = ANY(${sql.array(templates.map(t => t.id), 'int8')})
+    WHERE bundle_template_id IN ${sql(templates.map(t => t.id))}
     ORDER BY display_order ASC
   `;
 
@@ -32,7 +32,7 @@ export async function listAllActiveTemplates(): Promise<BundleTemplateWithSlots[
   const roleRows = slotIds.length > 0
     ? await sql<BundleTemplateSlotRoleRow[]>`
         SELECT * FROM bundle_template_slot_role
-        WHERE slot_id = ANY(${sql.array(slotIds, 'int8')})
+        WHERE slot_id IN ${sql(slotIds)}
       `
     : [];
 
@@ -88,7 +88,7 @@ export async function findTemplateByCode(
   const slotIds = slots.map(s => s.id);
   const roleRows = await sql<BundleTemplateSlotRoleRow[]>`
     SELECT * FROM bundle_template_slot_role
-    WHERE slot_id = ANY(${sql.array(slotIds, 'int8')})
+    WHERE slot_id IN ${sql(slotIds)}
   `;
 
   // Group roles by slot_id

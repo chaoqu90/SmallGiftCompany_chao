@@ -29,6 +29,7 @@ export interface AdminProduct {
   formFactor:        string
   minAge:            number
   maxAge:            number
+  imageUrl:          string | null
 }
 
 export interface ProductMeta {
@@ -48,6 +49,7 @@ export interface CreateProductRequest {
   formFactor:   string
   minAge:       number
   maxAge:       number
+  imageUrl?:    string | null
 }
 
 export interface AdminBundleListItem {
@@ -89,21 +91,30 @@ export interface ProductCoverage {
   budgetsCovered: string[]
 }
 
+// Shape returned by GET /admin/api/products/:id/affinities
 export interface ProductAffinities {
-  interestWeights: Record<string, number>
-  audienceWeights: Record<string, number>
-  roleWeights:     Record<string, number>
-  occasions:       string[]
+  interests: { interest: string; weight: number }[]
+  audiences: { audience: string; weight: number }[]
+  roles:     { role: string;     weight: number }[]
+  occasions: { occasion: string }[]
+}
+
+// Shape sent to PUT /admin/api/products/:id/affinities
+export interface AffinitiesPayload {
+  interests: { interest: string; weight: number }[]
+  audiences: { audience: string; weight: number }[]
+  roles:     { role: string;     weight: number }[]
+  occasions: { occasion: string }[]
 }
 
 export const adminApi = {
   getProducts: (auth: string) =>
     adminRequest<AdminProduct[]>('/admin/api/products/', auth),
 
-  updateInventory: (auth: string, id: number, quantity: number) =>
+  updateInventory: (auth: string, id: number, inventoryQuantity: number) =>
     adminRequest<AdminProduct>(`/admin/api/products/${id}/inventory`, auth, {
       method: 'PATCH',
-      body: JSON.stringify({ quantity }),
+      body: JSON.stringify({ inventoryQuantity }),
     }),
 
   setActive: (auth: string, id: number, active: boolean) =>
@@ -127,8 +138,8 @@ export const adminApi = {
   getAffinities: (auth: string, id: number) =>
     adminRequest<ProductAffinities>(`/admin/api/products/${id}/affinities`, auth),
 
-  updateAffinities: (auth: string, id: number, data: ProductAffinities) =>
-    adminRequest<ProductAffinities>(`/admin/api/products/${id}/affinities`, auth, {
+  updateAffinities: (auth: string, id: number, data: AffinitiesPayload) =>
+    adminRequest<void>(`/admin/api/products/${id}/affinities`, auth, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
@@ -174,4 +185,21 @@ export const adminApi = {
       method: 'PATCH',
       body: JSON.stringify({ name, category, formFactor }),
     }),
+
+  /** Step 1: get a presigned PUT URL + final public URL from the backend. */
+  getImageUploadUrl: (auth: string, filename: string, contentType: string) =>
+    adminRequest<{ presignedUrl: string; publicUrl: string; key: string }>(
+      `/admin/api/products/upload-image/presign?filename=${encodeURIComponent(filename)}&contentType=${encodeURIComponent(contentType)}`,
+      auth,
+    ),
+
+  /** Step 2: upload directly to S3 with the presigned URL (no auth header needed). */
+  uploadImageToS3: async (presignedUrl: string, file: File): Promise<void> => {
+    const res = await fetch(presignedUrl, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type },
+    })
+    if (!res.ok) throw new Error(`S3 upload failed: ${res.status}`)
+  },
 }

@@ -51,12 +51,27 @@ provider:
       allowCredentials: false
       maxAge: 3600
 
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - ses:SendEmail
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:PutObjectAcl
+          Resource: !Sub 'arn:aws:s3:::${ProductImagesBucket}/*'
+
   environment:
     DATABASE_URL: ${env:DATABASE_URL}
     CORS_ALLOWED_ORIGIN: ${env:CORS_ALLOWED_ORIGIN}
     ADMIN_USERNAME: ${env:ADMIN_USERNAME}
     ADMIN_PASSWORD: ${env:ADMIN_PASSWORD}
+    SUPABASE_JWT_SECRET: ${env:SUPABASE_JWT_SECRET}
     NODE_ENV: production
+    PRODUCT_IMAGES_BUCKET: !Ref ProductImagesBucket
 
 package:
   patterns:
@@ -80,6 +95,40 @@ functions:
 # ── CloudFormation resources for the frontend (S3 + CloudFront) ──────────────
 resources:
   Resources:
+
+    # S3 bucket — product images (publicly readable).
+    # Uploaded by the admin via presigned PUT URLs; served directly from S3.
+    # CORS is required because the browser uploads directly to S3.
+    ProductImagesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: false
+          BlockPublicPolicy: false
+          IgnorePublicAcls: false
+          RestrictPublicBuckets: false
+        CorsConfiguration:
+          CorsRules:
+            - AllowedOrigins:
+                - '*'
+              AllowedMethods:
+                - PUT
+              AllowedHeaders:
+                - '*'
+              MaxAge: 3600
+
+    # Bucket policy — allows anyone to read product images.
+    ProductImagesBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref ProductImagesBucket
+        PolicyDocument:
+          Statement:
+            - Sid: PublicRead
+              Effect: Allow
+              Principal: '*'
+              Action: s3:GetObject
+              Resource: !Sub '${ProductImagesBucket.Arn}/*'
 
     # S3 bucket — private static asset storage.
     # Public access is fully blocked; CloudFront accesses it via OAC.
@@ -203,6 +252,11 @@ resources:
     ApiGatewayUrl:
       Description: API Gateway HTTP API endpoint
       Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+
+    # S3 bucket name — product images (for reference / ops)
+    ProductImagesBucketName:
+      Description: S3 bucket for product images (public read)
+      Value: !Ref ProductImagesBucket
 
     # S3 bucket name — used by the deploy workflow to sync the frontend build
     FrontendBucketName:

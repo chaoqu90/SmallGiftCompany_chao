@@ -1,7 +1,7 @@
 /**
  * Affinity repository — batch-load and replace affinity data.
  *
- * All batch-load functions use WHERE product_id = ANY(${sql.array(ids)}) to
+ * All batch-load functions use WHERE product_id IN ${sql(ids)} to
  * fetch all affinities for a set of products in a single query, preventing
  * N+1 patterns during bundle generation (AC4.10).
  *
@@ -28,7 +28,7 @@ export async function loadInterestAffinities(
   return sql<ProductInterestAffinityRow[]>`
     SELECT product_id, interest, weight
     FROM product_interest_affinity
-    WHERE product_id = ANY(${sql.array(productIds, 'int8')})
+    WHERE product_id IN ${sql(productIds)}
   `;
 }
 
@@ -42,7 +42,7 @@ export async function loadAudienceAffinities(
   return sql<ProductAudienceAffinityRow[]>`
     SELECT product_id, audience, weight
     FROM product_audience_affinity
-    WHERE product_id = ANY(${sql.array(productIds, 'int8')})
+    WHERE product_id IN ${sql(productIds)}
   `;
 }
 
@@ -56,7 +56,7 @@ export async function loadRoleAffinities(
   return sql<ProductRoleAffinityRow[]>`
     SELECT product_id, role, weight
     FROM product_role_affinity
-    WHERE product_id = ANY(${sql.array(productIds, 'int8')})
+    WHERE product_id IN ${sql(productIds)}
   `;
 }
 
@@ -70,7 +70,7 @@ export async function loadOccasionAffinities(
   return sql<ProductOccasionRow[]>`
     SELECT product_id, occasion
     FROM product_occasion
-    WHERE product_id = ANY(${sql.array(productIds, 'int8')})
+    WHERE product_id IN ${sql(productIds)}
   `;
 }
 
