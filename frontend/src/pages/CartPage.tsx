@@ -30,7 +30,6 @@ import {
   Divider,
   FormControl,
   IconButton,
-  InputLabel,
   MenuItem,
   Select,
   Stack,
@@ -184,19 +183,23 @@ function CartItemCard({
           </Box>
 
           {/* Gift bag selector */}
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel>Gift Bag</InputLabel>
-            <Select
-              value={item.giftBagOptionId ?? ''}
-              label="Gift Bag"
-              onChange={e => handleGiftBagChange(e.target.value as number | '')}
-            >
-              <MenuItem value="">No gift bag</MenuItem>
-              {giftBagOptions.map(opt => (
-                <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Box>
+            <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>
+              Gift Bag
+            </Typography>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <Select
+                value={item.giftBagOptionId ?? ''}
+                displayEmpty
+                onChange={e => handleGiftBagChange(e.target.value as number | '')}
+              >
+                <MenuItem value="">No gift bag</MenuItem>
+                {giftBagOptions.map(opt => (
+                  <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
 
           {/* Quantity input */}
           <Box>

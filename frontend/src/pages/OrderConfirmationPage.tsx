@@ -27,14 +27,14 @@ export function OrderConfirmationPage() {
   const [searchParams] = useSearchParams()
   const redirectStatus = searchParams.get('redirect_status')
   const succeeded = redirectStatus === 'succeeded'
-  const { setCartCount } = useCart()
+  const { clearCart } = useCart()
 
-  // Clear cart badge immediately on successful payment
+  // Clear cart on successful payment
   useEffect(() => {
     if (succeeded) {
-      setCartCount(0)
+      clearCart()
     }
-  }, [succeeded, setCartCount])
+  }, [succeeded, clearCart])
 
   return (
     <Container maxWidth="sm" sx={{ py: 8 }}>

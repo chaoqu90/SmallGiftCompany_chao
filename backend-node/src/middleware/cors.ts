@@ -14,14 +14,21 @@
  */
 import type { CorsOptions } from 'cors';
 
-const allowedOrigin = process.env.CORS_ALLOWED_ORIGIN;
+// Supports a single origin or a comma-separated list, e.g.:
+//   CORS_ALLOWED_ORIGIN=https://www.smallgift.shop,https://smallgift.shop
+const raw = process.env.CORS_ALLOWED_ORIGIN;
+const allowedOrigins = raw
+  ? raw.split(',').map(o => o.trim()).filter(Boolean)
+  : [];
 
-if (!allowedOrigin) {
+if (allowedOrigins.length === 0) {
   console.warn('[cors] CORS_ALLOWED_ORIGIN is not set — CORS will reject all cross-origin requests');
+} else {
+  console.log('[cors] Allowed origins:', allowedOrigins);
 }
 
 export const corsOptions: CorsOptions = {
-  origin: allowedOrigin ?? false,
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins.length > 1 ? allowedOrigins : false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['*'],
   credentials: false,

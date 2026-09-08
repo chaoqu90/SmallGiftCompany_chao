@@ -77087,17 +77087,26 @@ function buildFuturePartyText(data) {
 }
 async function sendFuturePartyEmail(data) {
   const from = process.env.EMAIL_FROM ?? "orders@example.com";
+  const subject = "Your personalised goodie bag is ready!";
+  const textBody = buildFuturePartyText(data);
+  console.log("[email] Sending future-party email", {
+    from,
+    to: data.toEmail,
+    subject,
+    body: textBody
+  });
   await sesClient.send(new import_client_ses.SendEmailCommand({
     Destination: { ToAddresses: [data.toEmail] },
     Source: from,
     Message: {
-      Subject: { Data: "Your personalised goodie bag is ready!", Charset: "UTF-8" },
+      Subject: { Data: subject, Charset: "UTF-8" },
       Body: {
         Html: { Data: buildFuturePartyHtml(data), Charset: "UTF-8" },
-        Text: { Data: buildFuturePartyText(data), Charset: "UTF-8" }
+        Text: { Data: textBody, Charset: "UTF-8" }
       }
     }
   }));
+  console.log("[email] Future-party email sent to", data.toEmail);
 }
 function buildSignupPromotionHtml(data) {
   return `<!DOCTYPE html>
@@ -77144,36 +77153,57 @@ function buildSignupPromotionText(data) {
 }
 async function sendSignupPromotionEmail(data) {
   const from = process.env.EMAIL_FROM ?? "orders@example.com";
+  const subject = "You're signed up \u2014 see you at the Loudoun Children's Business Fair!";
+  const textBody = buildSignupPromotionText(data);
+  console.log("[email] Sending signup-promotion email", {
+    from,
+    to: data.toEmail,
+    subject,
+    body: textBody
+  });
   try {
     await sesClient.send(new import_client_ses.SendEmailCommand({
       Destination: { ToAddresses: [data.toEmail] },
       Source: from,
       Message: {
-        Subject: {
-          Data: "You're signed up \u2014 see you at the Loudoun Children's Business Fair!",
-          Charset: "UTF-8"
-        },
+        Subject: { Data: subject, Charset: "UTF-8" },
         Body: {
           Html: { Data: buildSignupPromotionHtml(data), Charset: "UTF-8" },
-          Text: { Data: buildSignupPromotionText(data), Charset: "UTF-8" }
+          Text: { Data: textBody, Charset: "UTF-8" }
         }
       }
     }));
+    console.log("[email] Signup-promotion email sent to", data.toEmail);
   } catch (err) {
     console.warn("[email] Failed to send signup-promotion email to", data.toEmail, ":", err);
   }
 }
 async function sendOrderConfirmation(order) {
   const from = process.env.EMAIL_FROM ?? "orders@example.com";
+  const subject = `Your Goodie Bag Order #${order.publicId}`;
+  const itemSummary = order.lineItems.map((li) => `  - ${li.interest.replace(/_/g, " ")} Bundle (${li.upgradeTier})${li.giftBagName ? ` + ${li.giftBagName}` : ""} x${li.quantity} @ $${li.unitPrice.toFixed(2)} = $${li.lineTotal.toFixed(2)}`).join("\n");
+  console.log("[email] Sending order-confirmation email", {
+    from,
+    to: order.customerEmail,
+    subject,
+    body: [
+      `Order: ${order.publicId}`,
+      `Customer: ${order.customerName ?? "(no name)"}`,
+      `Items:
+${itemSummary}`,
+      `Total: $${order.total.toFixed(2)}`
+    ].join("\n")
+  });
   try {
     await sesClient.send(new import_client_ses.SendEmailCommand({
       Destination: { ToAddresses: [order.customerEmail] },
       Source: from,
       Message: {
-        Subject: { Data: `Your Goodie Bag Order #${order.publicId}`, Charset: "UTF-8" },
+        Subject: { Data: subject, Charset: "UTF-8" },
         Body: { Html: { Data: buildHtml(order), Charset: "UTF-8" } }
       }
     }));
+    console.log("[email] Order-confirmation email sent to", order.customerEmail, "for order", order.publicId);
   } catch (err) {
     console.warn("[email] Failed to send confirmation email for", order.publicId, ":", err);
   }
@@ -95958,9 +95988,10 @@ webhookRouter.post(
       if (event.type === "payment_intent.succeeded") {
         const pi = event.data.object;
         const meta = pi.metadata;
+        const sessionId = meta.sessionId ?? "";
         await confirmOrder({
           paymentIntentId: pi.id,
-          sessionId: meta.sessionId ?? "",
+          sessionId,
           email: meta.email ?? "",
           name: meta.name || null,
           userId: meta.userId || null,
@@ -95970,6 +96001,9 @@ webhookRouter.post(
           shippingZip: meta.shippingZip || null,
           shippingCountry: meta.shippingCountry || null
         });
+        if (sessionId) {
+          await clearCart(sessionId);
+        }
         console.log("[webhook] Order confirmed for payment intent:", pi.id);
       } else if (event.type === "payment_intent.payment_failed") {
         const pi = event.data.object;

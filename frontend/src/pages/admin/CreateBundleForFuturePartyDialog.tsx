@@ -192,7 +192,7 @@ export function CreateBundleForFuturePartyDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Create Bundle for Future Party</DialogTitle>
+      <DialogTitle sx={{ color: 'text.primary', fontWeight: 700 }}>Create Bundle for Future Party</DialogTitle>
 
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>

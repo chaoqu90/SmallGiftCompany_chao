@@ -306,14 +306,14 @@ export function FuturePartyModal({ open, onClose }: FuturePartyModalProps) {
               value={state.kidAge}
               onChange={e => {
                 const v = e.target.value
-                set({ kidAge: v === '' ? '' : Number(v) })
+                set({ kidAge: v === '' ? '' : Number(v), ageError: null })
               }}
               error={!!state.ageError}
-              helperText={state.ageError ?? ''}
+              helperText={state.ageError ?? 'Age 1–12'}
               disabled={state.submitting}
               fullWidth
               size="small"
-              inputProps={{ min: 1, max: 12 }}
+              inputProps={{ min: 1, max: 12, step: 1, inputMode: 'numeric' }}
             />
 
             {/* API-level error (AC2.8) */}

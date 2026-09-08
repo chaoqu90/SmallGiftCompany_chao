@@ -35,21 +35,11 @@ provider:
   # No VPC — Lambda outside a VPC has full internet access to Supabase (public TLS)
   # Adding a VPC here would BREAK connectivity to Supabase unless a NAT Gateway is added
 
-  httpApi:
-    cors:
-      allowedOrigins:
-        - ${env:CORS_ALLOWED_ORIGIN}
-      allowedMethods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-        - OPTIONS
-      allowedHeaders:
-        - '*'
-      allowCredentials: false
-      maxAge: 3600
+  httpApi: {}
+  # CORS is handled entirely by the Express cors() middleware in app.ts.
+  # Do NOT configure httpApi.cors here — API Gateway would add its own
+  # Access-Control-Allow-Origin headers, duplicating what Express adds and
+  # causing browsers to reject all cross-origin responses (including admin login).
 
   iam:
     role:

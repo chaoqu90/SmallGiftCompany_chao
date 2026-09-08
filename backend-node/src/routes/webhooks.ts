@@ -18,6 +18,7 @@
 import { Router, type Request, type Response } from 'express';
 import { stripe } from '../lib/stripe.js';
 import { confirmOrder } from '../repositories/orders.js';
+import { clearCart } from '../repositories/cart.js';
 
 export const webhookRouter = Router();
 
@@ -50,9 +51,11 @@ webhookRouter.post(
         const pi = event.data.object;
         const meta = pi.metadata;
 
+        const sessionId = meta.sessionId ?? '';
+
         await confirmOrder({
           paymentIntentId: pi.id,
-          sessionId:       meta.sessionId       ?? '',
+          sessionId,
           email:           meta.email           ?? '',
           name:            meta.name            || null,
           userId:          meta.userId          || null,
@@ -62,6 +65,10 @@ webhookRouter.post(
           shippingZip:     meta.shippingZip     || null,
           shippingCountry: meta.shippingCountry || null,
         });
+
+        if (sessionId) {
+          await clearCart(sessionId);
+        }
 
         console.log('[webhook] Order confirmed for payment intent:', pi.id);
       } else if (event.type === 'payment_intent.payment_failed') {

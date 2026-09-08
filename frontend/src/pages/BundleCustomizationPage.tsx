@@ -169,14 +169,7 @@ export function BundleCustomizationPage() {
       : 0
   const displayPrice = basePrice + standardAdj + upgradeAdj
 
-  // Shipping tiers (placeholder — adjust rates as needed)
-  function shippingFee(qty: number): number {
-    if (qty <= 10)  return 5.00
-    if (qty <= 20)  return 8.00
-    return 12.00
-  }
-  const shipping   = shippingFee(quantity)
-  const totalPrice = displayPrice * quantity + shipping
+  const totalPrice = displayPrice * quantity
 
   return (
     <Box sx={{ backgroundColor: C.bg, minHeight: '100vh' }}>
@@ -405,7 +398,10 @@ export function BundleCustomizationPage() {
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Typography sx={{ color: C.meta, fontSize: '0.8rem' }}>Shipping</Typography>
-              <Typography sx={{ color: C.meta, fontSize: '0.8rem' }}>${shipping.toFixed(2)}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75 }}>
+                <Typography sx={{ color: C.meta, fontSize: '0.8rem', textDecoration: 'line-through' }}>$8.00</Typography>
+                <Typography sx={{ color: 'success.main', fontSize: '0.8rem', fontWeight: 600 }}>FREE</Typography>
+              </Box>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mt: 0.25 }}>
               <Typography sx={{ color: '#143C78', fontSize: '0.85rem', fontWeight: 700 }}>Party Total</Typography>

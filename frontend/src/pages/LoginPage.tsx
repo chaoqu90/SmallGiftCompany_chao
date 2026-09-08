@@ -13,7 +13,6 @@ import {
   Alert,
   CircularProgress,
   Link,
-  Divider,
   Paper,
 } from '@mui/material'
 import { supabase } from '../lib/supabaseClient'
@@ -123,17 +122,6 @@ export function LoginPage() {
             {error}
           </Alert>
         )}
-
-        <Button
-          fullWidth
-          variant="outlined"
-          onClick={handleGoogleSignIn}
-          sx={{ mb: 2 }}
-        >
-          Continue with Google
-        </Button>
-
-        <Divider sx={{ mb: 2 }}>or</Divider>
 
         <Box component="form" onSubmit={handleSubmit} noValidate>
           <TextField

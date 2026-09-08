@@ -43,14 +43,14 @@ export function Footer() {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
             <Typography sx={{ fontSize: '0.8rem', color: '#6E6E73' }}>
               📞{' '}
-              <Link href="tel:+1XXXXXXXXXX" underline="hover" sx={{ color: '#6E6E73' }}>
-                (XXX) XXX-XXXX
+              <Link href="tel:+15184231125" underline="hover" sx={{ color: '#6E6E73' }}>
+                (518) 423-1125
               </Link>
             </Typography>
             <Typography sx={{ fontSize: '0.8rem', color: '#6E6E73' }}>
               ✉️{' '}
-              <Link href="mailto:smallgiftshopgo@gmail.com" underline="hover" sx={{ color: '#6E6E73' }}>
-                smallgiftshopgo@gmail.com
+              <Link href="mailto:hello@smallgift.shop" underline="hover" sx={{ color: '#6E6E73' }}>
+                hello@smallgift.shop
               </Link>
             </Typography>
           </Box>
