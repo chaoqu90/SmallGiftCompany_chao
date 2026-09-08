@@ -27,17 +27,6 @@ export function LoginPage() {
   // AC3.4 — email not confirmed: show resend link instead of generic error
   const [pendingVerification, setPendingVerification] = useState(false)
 
-  // ── Google OAuth ──────────────────────────────────────────────────────────
-
-  async function handleGoogleSignIn() {
-    setError(null)
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/auth/callback' },
-    })
-    // Supabase redirects the browser; no further action needed here.
-  }
-
   // ── Email + password submit ───────────────────────────────────────────────
 
   async function handleSubmit(e: React.FormEvent) {

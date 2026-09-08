@@ -31,16 +31,6 @@ export function RegisterPage() {
   const [passwordError, setPasswordError] = useState('')
   const [confirmError,  setConfirmError]  = useState('')
 
-  // ── Google OAuth ──────────────────────────────────────────────────────────
-
-  async function handleGoogleSignIn() {
-    setError(null)
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + '/auth/callback' },
-    })
-  }
-
   // ── Client-side validation (AC1.2) ───────────────────────────────────────
 
   function validate(): boolean {
