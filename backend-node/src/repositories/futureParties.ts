@@ -78,6 +78,22 @@ export async function insertFutureParty(data: InsertFuturePartyData): Promise<Fu
   return rows[0];
 }
 
+// ─── findSignupPromotionByEmail ───────────────────────────────────────────────
+
+/**
+ * Find an existing signup-promotion row by email.
+ * Used to detect duplicates before inserting a new one.
+ */
+export async function findSignupPromotionByEmail(email: string): Promise<FuturePartyRow | undefined> {
+  const rows = await sql<FuturePartyRow[]>`
+    SELECT * FROM future_parties
+    WHERE email = ${email}
+      AND source = 'signup-promotion'
+    LIMIT 1
+  `;
+  return rows[0];
+}
+
 // ─── listFutureParties ────────────────────────────────────────────────────────
 
 /**

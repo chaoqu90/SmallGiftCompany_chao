@@ -17,6 +17,7 @@ import {
   Chip,
   CircularProgress,
   Dialog,
+  DialogActions,
   DialogContent,
   DialogTitle,
   FormControlLabel,
@@ -29,7 +30,8 @@ import {
 } from '@mui/material'
 import dayjs from 'dayjs'
 import CloseIcon from '@mui/icons-material/Close'
-import { submitFutureParty } from '../api/futureParties'
+import { submitFutureParty, DuplicateSignupError } from '../api/futureParties'
+import { supabase } from '../lib/supabaseClient'
 import { COLORS } from '../theme'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -87,6 +89,13 @@ function initialState() {
 
 export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProps) {
   const [state, setState] = useState(initialState())
+  const [welcomeBack, setWelcomeBack] = useState(false)
+  const [wbEmail, setWbEmail] = useState('')
+  const [wbPassword, setWbPassword] = useState('')
+  const [wbConfirm, setWbConfirm] = useState('')
+  const [wbError, setWbError] = useState<string | null>(null)
+  const [wbSuccess, setWbSuccess] = useState(false)
+  const [wbLoading, setWbLoading] = useState(false)
 
   const set = (patch: Partial<ReturnType<typeof initialState>>) =>
     setState(prev => ({ ...prev, ...patch }))
@@ -94,9 +103,35 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
   // ── handleClose — AC2.8, AC2.9 ──────────────────────────────────────────────
 
   function handleClose() {
-    if (state.submitting) return   // AC2.9 — guard against close during submission
+    if (state.submitting || wbLoading) return
     setState(initialState())
+    setWelcomeBack(false)
+    setWbEmail(''); setWbPassword(''); setWbConfirm(''); setWbError(null); setWbSuccess(false)
     onClose()
+  }
+
+  async function handleWbRegister() {
+    setWbError(null)
+    if (wbPassword.length < 8) {
+      setWbError('Password must be at least 8 characters.')
+      return
+    }
+    if (wbPassword !== wbConfirm) {
+      setWbError('Passwords do not match.')
+      return
+    }
+    setWbLoading(true)
+    const { error } = await supabase.auth.signUp({ email: wbEmail, password: wbPassword })
+    setWbLoading(false)
+    if (error) {
+      if (error.message?.toLowerCase().includes('user already registered') || error.code === 'user_already_exists') {
+        setWbError('An account with this email already exists. Try signing in.')
+      } else {
+        setWbError('Registration failed. Please try again.')
+      }
+      return
+    }
+    setWbSuccess(true)
   }
 
   // ── handleSubmit — AC2.4, AC2.5 ─────────────────────────────────────────────
@@ -156,9 +191,14 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
       })
       // 7. Success (AC2.6)
       set({ success: true })
-    } catch {
-      // 8. API error (AC2.7)
-      set({ apiError: 'Something went wrong. Please try again.' })
+    } catch (err) {
+      if (err instanceof DuplicateSignupError) {
+        // Show Welcome Back dialog with the email pre-filled
+        setWbEmail(state.email)
+        setWelcomeBack(true)
+      } else {
+        set({ apiError: 'Something went wrong. Please try again.' })
+      }
     } finally {
       set({ submitting: false })
     }
@@ -168,6 +208,7 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
   const todayStr = dayjs().add(1, 'day').format('YYYY-MM-DD')
 
   return (
+    <>
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       {/* AC2.1 — Modal title */}
       <DialogTitle sx={{ pr: 6, color: COLORS.charcoal, fontWeight: 700 }}>
@@ -347,5 +388,74 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
         )}
       </DialogContent>
     </Dialog>
+
+    {/* ── Welcome Back dialog (duplicate signup-promotion email) ── */}
+    <Dialog open={welcomeBack} onClose={handleClose} maxWidth="xs" fullWidth>
+      <DialogTitle sx={{ color: 'text.primary', fontWeight: 700 }}>
+        Welcome back!
+      </DialogTitle>
+      <DialogContent>
+        {wbSuccess ? (
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Alert severity="success">
+              Account created! Check your inbox to verify your email.
+            </Alert>
+          </Stack>
+        ) : (
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Your promotion code has already been sent to <strong>{wbEmail}</strong>.
+              Would you like to create an account to track your order?
+            </Typography>
+            <TextField
+              label="Email"
+              type="email"
+              value={wbEmail}
+              fullWidth
+              size="small"
+              slotProps={{ input: { readOnly: true } }}
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={wbPassword}
+              onChange={e => setWbPassword(e.target.value)}
+              fullWidth
+              size="small"
+              disabled={wbLoading}
+              autoComplete="new-password"
+            />
+            <TextField
+              label="Confirm password"
+              type="password"
+              value={wbConfirm}
+              onChange={e => setWbConfirm(e.target.value)}
+              fullWidth
+              size="small"
+              disabled={wbLoading}
+              autoComplete="new-password"
+            />
+            {wbError && <Alert severity="error">{wbError}</Alert>}
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={handleClose} disabled={wbLoading}>
+          {wbSuccess ? 'Close' : 'Not now'}
+        </Button>
+        {!wbSuccess && (
+          <Button
+            variant="contained"
+            onClick={handleWbRegister}
+            disabled={wbLoading || !wbPassword || !wbConfirm}
+            startIcon={wbLoading ? <CircularProgress size={16} color="inherit" /> : null}
+            sx={{ backgroundColor: COLORS.coral, '&:hover': { backgroundColor: '#e06b57' } }}
+          >
+            {wbLoading ? 'Creating…' : 'Create account'}
+          </Button>
+        )}
+      </DialogActions>
+    </Dialog>
+    </>
   )
 }

@@ -10,6 +10,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { FuturePartyRequestSchema } from '../types/dtos.js';
 import {
   insertFutureParty,
+  findSignupPromotionByEmail,
   type FuturePartyRow,
 } from '../repositories/futureParties.js';
 import { sendSignupPromotionEmail } from '../lib/email.js';
@@ -56,7 +57,22 @@ futurePartiesRouter.post(
         return;
       }
 
-      // 3. Persist (pass source through to the repository — FEAT-005 design.md §3.2)
+      // 3. Duplicate check for signup-promotion emails
+      if (parsed.source === 'signup-promotion') {
+        const existing = await findSignupPromotionByEmail(parsed.email);
+        if (existing) {
+          res.status(409).json({
+            type:     'about:duplicate-signup',
+            title:    'Already Registered',
+            status:   409,
+            detail:   'This email has already signed up for the promotion.',
+            instance: req.path,
+          });
+          return;
+        }
+      }
+
+      // 4. Persist (pass source through to the repository — FEAT-005 design.md §3.2)
       const row = await insertFutureParty({
         email:     parsed.email,
         partyDate: parsed.partyDate,
@@ -65,7 +81,7 @@ futurePartiesRouter.post(
         source:    parsed.source ?? null,
       });
 
-      // 4. Signup-promotion email — fire-and-forget (FEAT-005 AC4.1, AC4.6)
+      // 5. Signup-promotion email — fire-and-forget (FEAT-005 AC4.1, AC4.6)
       // Intentionally NOT awaited — the 201 response is returned immediately.
       // sendSignupPromotionEmail swallows SES errors internally with console.warn.
       if (parsed.source === 'signup-promotion') {
@@ -77,7 +93,7 @@ futurePartiesRouter.post(
         });
       }
 
-      // 5. Respond
+      // 6. Respond
       res.status(201).json(toFuturePartyDto(row));
     } catch (err) {
       next(err);

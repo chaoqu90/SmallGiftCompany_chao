@@ -28,9 +28,15 @@ export interface FuturePartyResponse {
   source?:              string | null   // FEAT-005 — present when submitted via /build
 }
 
+/** Thrown when a signup-promotion email is already registered. */
+export class DuplicateSignupError extends Error {
+  constructor() { super('duplicate-signup') }
+}
+
 /**
  * Submit a future party registration.
- * Throws on non-2xx responses so the caller can display an error.
+ * Throws DuplicateSignupError on 409 (signup-promotion email already exists).
+ * Throws Error on other non-2xx responses.
  */
 export async function submitFutureParty(data: FuturePartySubmission): Promise<FuturePartyResponse> {
   const res = await fetch(`${BASE_URL}/api/future-parties`, {
@@ -38,6 +44,7 @@ export async function submitFutureParty(data: FuturePartySubmission): Promise<Fu
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
+  if (res.status === 409) throw new DuplicateSignupError()
   if (!res.ok) throw new Error(`Request failed: ${res.status}`)
   return res.json() as Promise<FuturePartyResponse>
 }

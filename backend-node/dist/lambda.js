@@ -539,11 +539,11 @@ var require_format_response = __commonJS({
       const encoding = isBase64Encoded ? "base64" : "utf8";
       let body = Response.body(response).toString(encoding);
       if (headers["transfer-encoding"] === "chunked" || response.chunkedEncoding) {
-        const raw = Response.body(response).toString().split("\r\n");
+        const raw2 = Response.body(response).toString().split("\r\n");
         const parsed = [];
-        for (let i5 = 0; i5 < raw.length; i5 += 2) {
-          const size2 = parseInt(raw[i5], 16);
-          const value = raw[i5 + 1];
+        for (let i5 = 0; i5 < raw2.length; i5 += 2) {
+          const size2 = parseInt(raw2[i5], 16);
+          const value = raw2[i5 + 1];
           if (value) {
             parsed.push(value.substring(0, size2));
           }
@@ -15142,8 +15142,8 @@ var require_raw = __commonJS({
     var debug = require_src()("body-parser:raw");
     var read = require_read();
     var typeis = require_type_is();
-    module.exports = raw;
-    function raw(options) {
+    module.exports = raw2;
+    function raw2(options) {
       var opts = options || {};
       var inflate = opts.inflate !== false;
       var limit = typeof opts.limit === "undefined" || opts.limit === null ? 102400 : bytes.parse(opts.limit);
@@ -24810,20 +24810,20 @@ var require_lib3 = __commonJS({
       function isString(s2) {
         return typeof s2 === "string" || s2 instanceof String;
       }
-      function isOriginAllowed(origin, allowedOrigin2) {
-        if (Array.isArray(allowedOrigin2)) {
-          for (var i5 = 0; i5 < allowedOrigin2.length; ++i5) {
-            if (isOriginAllowed(origin, allowedOrigin2[i5])) {
+      function isOriginAllowed(origin, allowedOrigin) {
+        if (Array.isArray(allowedOrigin)) {
+          for (var i5 = 0; i5 < allowedOrigin.length; ++i5) {
+            if (isOriginAllowed(origin, allowedOrigin[i5])) {
               return true;
             }
           }
           return false;
-        } else if (isString(allowedOrigin2)) {
-          return origin === allowedOrigin2;
-        } else if (allowedOrigin2 instanceof RegExp) {
-          return allowedOrigin2.test(origin);
+        } else if (isString(allowedOrigin)) {
+          return origin === allowedOrigin;
+        } else if (allowedOrigin instanceof RegExp) {
+          return allowedOrigin.test(origin);
         } else {
-          return !!allowedOrigin2;
+          return !!allowedOrigin;
         }
       }
       function configureOrigin(options, req) {
@@ -42453,23 +42453,23 @@ var init_jsonReviver = __esm({
 // node_modules/@aws-sdk/core/dist-es/submodules/protocols/json/needsReviver.js
 function needsReviver(schema) {
   const ns = NormalizedSchema.of(schema);
-  const raw = ns.getSchema();
-  if (Array.isArray(raw) && ns.isStructSchema()) {
-    if (REVIVER_SYMBOL in raw) {
-      return raw[REVIVER_SYMBOL];
+  const raw2 = ns.getSchema();
+  if (Array.isArray(raw2) && ns.isStructSchema()) {
+    if (REVIVER_SYMBOL in raw2) {
+      return raw2[REVIVER_SYMBOL];
     }
     const result = _check(ns, /* @__PURE__ */ new Set());
-    raw[REVIVER_SYMBOL] = result;
+    raw2[REVIVER_SYMBOL] = result;
     return result;
   }
   return _check(ns, /* @__PURE__ */ new Set());
 }
 function _check(ns, seen) {
-  const raw = ns.getSchema();
-  if (seen.has(raw)) {
+  const raw2 = ns.getSchema();
+  if (seen.has(raw2)) {
     return false;
   }
-  seen.add(raw);
+  seen.add(raw2);
   if (ns.isBigIntegerSchema() || ns.isBigDecimalSchema()) {
     return true;
   }
@@ -43000,10 +43000,10 @@ var init_JsonShapeSerializer2 = __esm({
         this.rootSchema = void 0;
         const finalPosition = this.i;
         this.i = 0;
-        const raw = this.rawValue;
+        const raw2 = this.rawValue;
         this.rawValue = void 0;
         if (finalPosition === 0) {
-          return raw;
+          return raw2;
         }
         const result = this.json.subarray(0, finalPosition);
         this.json = alloc(INITIAL_BUFFER_SIZE2);
@@ -67674,12 +67674,15 @@ var import_express16 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/middleware/cors.ts
-var allowedOrigin = process.env.CORS_ALLOWED_ORIGIN;
-if (!allowedOrigin) {
+var raw = process.env.CORS_ALLOWED_ORIGIN;
+var allowedOrigins = raw ? raw.split(",").map((o3) => o3.trim()).filter(Boolean) : [];
+if (allowedOrigins.length === 0) {
   console.warn("[cors] CORS_ALLOWED_ORIGIN is not set \u2014 CORS will reject all cross-origin requests");
+} else {
+  console.log("[cors] Allowed origins:", allowedOrigins);
 }
 var corsOptions = {
-  origin: allowedOrigin ?? false,
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins.length > 1 ? allowedOrigins : false,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["*"],
   credentials: false,
@@ -78049,116 +78052,116 @@ var generateV2Error = (rawStripeError) => {
 };
 var StripeError = class extends Error {
   // errorProperties: The end of the section generated from our OpenAPI spec
-  constructor(raw = {}, type = null) {
-    super(raw.message);
+  constructor(raw2 = {}, type = null) {
+    super(raw2.message);
     this.type = type || this.constructor.name;
-    this.raw = raw;
-    this.rawType = raw.type;
-    this.detail = raw.detail;
-    this.headers = raw.headers;
-    this.requestId = raw.requestId;
-    this.statusCode = raw.statusCode;
-    this.message = raw.message ?? "";
-    this.userMessage = raw.user_message;
-    this.advice_code = raw.advice_code;
-    this.charge = raw.charge;
-    this.code = raw.code;
-    this.decline_code = raw.decline_code;
-    this.doc_url = raw.doc_url;
-    this.network_advice_code = raw.network_advice_code;
-    this.network_decline_code = raw.network_decline_code;
-    this.param = raw.param;
-    this.payment_intent = raw.payment_intent;
-    this.payment_method = raw.payment_method;
-    this.payment_method_type = raw.payment_method_type;
-    this.request_log_url = raw.request_log_url;
-    this.setup_intent = raw.setup_intent;
-    this.source = raw.source;
-    this.user_message = raw.user_message;
+    this.raw = raw2;
+    this.rawType = raw2.type;
+    this.detail = raw2.detail;
+    this.headers = raw2.headers;
+    this.requestId = raw2.requestId;
+    this.statusCode = raw2.statusCode;
+    this.message = raw2.message ?? "";
+    this.userMessage = raw2.user_message;
+    this.advice_code = raw2.advice_code;
+    this.charge = raw2.charge;
+    this.code = raw2.code;
+    this.decline_code = raw2.decline_code;
+    this.doc_url = raw2.doc_url;
+    this.network_advice_code = raw2.network_advice_code;
+    this.network_decline_code = raw2.network_decline_code;
+    this.param = raw2.param;
+    this.payment_intent = raw2.payment_intent;
+    this.payment_method = raw2.payment_method;
+    this.payment_method_type = raw2.payment_method_type;
+    this.request_log_url = raw2.request_log_url;
+    this.setup_intent = raw2.setup_intent;
+    this.source = raw2.source;
+    this.user_message = raw2.user_message;
   }
 };
 StripeError.generate = generateV1Error;
 var StripeCardError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeCardError");
-    this.decline_code = raw.decline_code ?? "";
+  constructor(raw2 = {}) {
+    super(raw2, "StripeCardError");
+    this.decline_code = raw2.decline_code ?? "";
   }
 };
 var StripeInvalidRequestError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeInvalidRequestError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeInvalidRequestError");
   }
 };
 var StripeAPIError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeAPIError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeAPIError");
   }
 };
 var StripeAuthenticationError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeAuthenticationError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeAuthenticationError");
   }
 };
 var StripePermissionError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripePermissionError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripePermissionError");
   }
 };
 var StripeRateLimitError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeRateLimitError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeRateLimitError");
   }
 };
 var StripeConnectionError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeConnectionError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeConnectionError");
   }
 };
 var StripeSignatureVerificationError = class extends StripeError {
-  constructor(header, payload2, raw = {}) {
-    super(raw, "StripeSignatureVerificationError");
+  constructor(header, payload2, raw2 = {}) {
+    super(raw2, "StripeSignatureVerificationError");
     this.header = header;
     this.payload = payload2;
   }
 };
 var StripeIdempotencyError = class extends StripeError {
-  constructor(raw = {}) {
-    super(raw, "StripeIdempotencyError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeIdempotencyError");
   }
 };
 var StripeOAuthError = class extends StripeError {
-  constructor(raw = {}, type = "StripeOAuthError") {
-    super(raw, type);
+  constructor(raw2 = {}, type = "StripeOAuthError") {
+    super(raw2, type);
   }
 };
 var StripeInvalidGrantError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeInvalidGrantError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeInvalidGrantError");
   }
 };
 var StripeInvalidClientError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeInvalidClientError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeInvalidClientError");
   }
 };
 var StripeOAuthInvalidRequestError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeOAuthInvalidRequestError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeOAuthInvalidRequestError");
   }
 };
 var StripeInvalidScopeError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeInvalidScopeError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeInvalidScopeError");
   }
 };
 var StripeUnsupportedGrantTypeError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeUnsupportedGrantTypeError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeUnsupportedGrantTypeError");
   }
 };
 var StripeUnsupportedResponseTypeError = class extends StripeOAuthError {
-  constructor(raw = {}) {
-    super(raw, "StripeUnsupportedResponseTypeError");
+  constructor(raw2 = {}) {
+    super(raw2, "StripeUnsupportedResponseTypeError");
   }
 };
 var RateLimitError = class extends StripeError {
@@ -78501,8 +78504,8 @@ function parseHeadersForFetch(headers) {
   });
 }
 function parsePayload(payload2) {
-  const raw = payload2 instanceof Uint8Array ? new TextDecoder("utf8").decode(payload2) : payload2;
-  return JSON.parse(raw);
+  const raw2 = payload2 instanceof Uint8Array ? new TextDecoder("utf8").decode(payload2) : payload2;
+  return JSON.parse(raw2);
 }
 function maybeExtractFromCloudProviderEnvelope(payload2) {
   const parsed = parsePayload(payload2);
@@ -96046,6 +96049,15 @@ async function insertFutureParty(data) {
   `;
   return rows[0];
 }
+async function findSignupPromotionByEmail(email) {
+  const rows = await sql`
+    SELECT * FROM future_parties
+    WHERE email = ${email}
+      AND source = 'signup-promotion'
+    LIMIT 1
+  `;
+  return rows[0];
+}
 async function listFutureParties() {
   return sql`
     SELECT * FROM future_parties
@@ -96127,6 +96139,19 @@ futurePartiesRouter.post(
           instance: req.path
         });
         return;
+      }
+      if (parsed.source === "signup-promotion") {
+        const existing = await findSignupPromotionByEmail(parsed.email);
+        if (existing) {
+          res.status(409).json({
+            type: "about:duplicate-signup",
+            title: "Already Registered",
+            status: 409,
+            detail: "This email has already signed up for the promotion.",
+            instance: req.path
+          });
+          return;
+        }
       }
       const row = await insertFutureParty({
         email: parsed.email,

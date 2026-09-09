@@ -622,7 +622,7 @@ function ProductRows({
                         ${product.retailPrice.toFixed(2)} retail
                       </Typography>
                       <Typography sx={{ fontSize: '0.75rem', color: '#6E6E73' }}>
-                        Cost ${product.cost.toFixed(2)} · COG ${product.cogAdjusted.toFixed(2)}
+                        Cost ¥{product.cost.toFixed(2)} · COG ¥{product.cogAdjusted.toFixed(2)}
                       </Typography>
                     </Box>
                   </Box>
