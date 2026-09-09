@@ -235,6 +235,8 @@ function buildSignupPromotionHtml(data: SignupPromotionEmailData): string {
   <ul style="line-height:1.8;">
     <li><strong>Date:</strong> Saturday, September 12, 2026</li>
     <li><strong>Time:</strong> 11 AM – 3 PM</li>
+    <li><strong>Address:</strong> 21100 Dulles Town Cir, Dulles, VA 20166</li>
+    <li><strong>Booth:</strong> IT IS A SMALL GIFT COMPANY</li>
   </ul>
   <div style="background:#fff8f0;border:2px solid #f47f6b;border-radius:8px;padding:20px;text-align:center;margin:24px 0;">
     <p style="margin:0 0 8px;font-size:14px;color:#666;">Your redemption code</p>
@@ -258,6 +260,8 @@ function buildSignupPromotionText(data: SignupPromotionEmailData): string {
     "",
     "  Date: Saturday, September 12, 2026",
     "  Time: 11 AM – 3 PM",
+    "  Address: 21100 Dulles Town Cir, Dulles, VA 20166",
+    "  Booth: IT IS A SMALL GIFT COMPANY",
     "",
     `Your redemption code: ${data.redemptionCode}`,
     "",

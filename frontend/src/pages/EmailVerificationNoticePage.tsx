@@ -65,7 +65,7 @@ export function EmailVerificationNoticePage() {
         </Typography>
 
         <Typography variant="body1" mb={3}>
-          Please verify your email address. Check your inbox for a verification link.
+          We sent a verification link to <strong>{user?.email}</strong>. Please check your inbox and click the link to activate your account.
         </Typography>
 
         {resent && (

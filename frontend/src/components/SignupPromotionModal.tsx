@@ -227,8 +227,8 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
           /* ── Success state (AC2.6) ────────────────────────────────────────── */
           <Stack spacing={2} sx={{ py: 1 }}>
             <Alert severity="success">
-              Thank you! We'll see you at the Loudoun Children's Business Fair on Saturday,
-              September 12, 2026. Your surprise gift is waiting for you — check your email for details!
+              Thank you! We sent your promotion details to <strong>{state.email}</strong>. We'll see you at the Loudoun Children's Business Fair on Saturday,
+              September 12, 2026. Your surprise gift is waiting for you!
             </Alert>
             <Button variant="outlined" onClick={handleClose} fullWidth>
               Close
