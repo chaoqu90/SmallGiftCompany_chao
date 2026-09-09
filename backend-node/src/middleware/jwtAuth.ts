@@ -1,26 +1,31 @@
 /**
- * JWT verification middleware — Supabase Auth (HS256).
+ * JWT verification middleware — Supabase Auth (RS256 via JWKS).
  *
- * Reads SUPABASE_JWT_SECRET from process.env at module initialisation (fail
- * fast on cold start, mirroring the pattern in db.ts).
+ * Supabase has migrated from HS256 (legacy shared secret) to RS256 (asymmetric
+ * signing keys). Tokens are now verified using Supabase's public JWKS endpoint
+ * instead of the legacy JWT secret.
+ *
+ * JWKS URL: https://<project>.supabase.co/auth/v1/.well-known/jwks.json
+ * SUPABASE_URL env var is used to construct the JWKS URL — must be set.
  *
  * On every request:
  *   1. Extracts the Bearer token from the Authorization header.
- *   2. Verifies the token with jose jwtVerify (HS256).
+ *   2. Verifies the token via JWKS (RS256 / ES256).
  *   3. On success → sets req.user = { id, email } and calls next().
  *   4. On any failure → returns HTTP 401 RFC 7807 ProblemDetail.
  *
  * Requirements: R7 (AC7.1 – AC7.5)
  */
 import type { Request, Response, NextFunction } from 'express';
-import { jwtVerify } from 'jose';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
-// ── Fail fast: SUPABASE_JWT_SECRET must be present at cold start ─────────────
-if (!process.env.SUPABASE_JWT_SECRET) {
-  throw new Error('SUPABASE_JWT_SECRET environment variable is required.');
+if (!process.env.SUPABASE_URL) {
+  throw new Error('SUPABASE_URL environment variable is required.');
 }
 
-const secretKey = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET);
+const JWKS = createRemoteJWKSet(
+  new URL(`${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`),
+);
 
 // ── 401 helper ────────────────────────────────────────────────────────────────
 function sendUnauthorized(res: Response, req: Request, detail: string): void {
@@ -49,9 +54,7 @@ export async function jwtAuth(
   const token = authHeader.slice(7); // strip "Bearer "
 
   try {
-    const { payload } = await jwtVerify(token, secretKey, {
-      algorithms: ['HS256'],
-    });
+    const { payload } = await jwtVerify(token, JWKS);
 
     req.user = {
       id:    payload.sub as string,

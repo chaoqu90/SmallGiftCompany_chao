@@ -37236,10 +37236,10 @@ var init_check_features = __esm({
 });
 
 // node_modules/@aws-sdk/core/dist-es/submodules/client/middleware-user-agent/constants.js
-var USER_AGENT, X_AMZ_USER_AGENT, SPACE, UA_NAME_SEPARATOR, UA_NAME_ESCAPE_REGEX, UA_VALUE_ESCAPE_REGEX, UA_ESCAPE_CHAR;
+var USER_AGENT2, X_AMZ_USER_AGENT, SPACE, UA_NAME_SEPARATOR, UA_NAME_ESCAPE_REGEX, UA_VALUE_ESCAPE_REGEX, UA_ESCAPE_CHAR;
 var init_constants7 = __esm({
   "node_modules/@aws-sdk/core/dist-es/submodules/client/middleware-user-agent/constants.js"() {
-    USER_AGENT = "user-agent";
+    USER_AGENT2 = "user-agent";
     X_AMZ_USER_AGENT = "x-amz-user-agent";
     SPACE = " ";
     UA_NAME_SEPARATOR = "/";
@@ -37306,9 +37306,9 @@ var init_user_agent_middleware = __esm({
       ].join(SPACE);
       if (options.runtime !== "browser") {
         if (normalUAValue) {
-          headers[X_AMZ_USER_AGENT] = headers[X_AMZ_USER_AGENT] ? `${headers[USER_AGENT]} ${normalUAValue}` : normalUAValue;
+          headers[X_AMZ_USER_AGENT] = headers[X_AMZ_USER_AGENT] ? `${headers[USER_AGENT2]} ${normalUAValue}` : normalUAValue;
         }
-        headers[USER_AGENT] = sdkUserAgentValue;
+        headers[USER_AGENT2] = sdkUserAgentValue;
       } else {
         headers[X_AMZ_USER_AGENT] = sdkUserAgentValue;
       }
@@ -71921,6 +71921,33 @@ var JWTInvalid = class extends JOSEError {
   static code = "ERR_JWT_INVALID";
   code = "ERR_JWT_INVALID";
 };
+var JWKSInvalid = class extends JOSEError {
+  static code = "ERR_JWKS_INVALID";
+  code = "ERR_JWKS_INVALID";
+};
+var JWKSNoMatchingKey = class extends JOSEError {
+  static code = "ERR_JWKS_NO_MATCHING_KEY";
+  code = "ERR_JWKS_NO_MATCHING_KEY";
+  constructor(message2 = "no applicable key found in the JSON Web Key Set", options) {
+    super(message2, options);
+  }
+};
+var JWKSMultipleMatchingKeys = class extends JOSEError {
+  [Symbol.asyncIterator] = async function* () {
+  };
+  static code = "ERR_JWKS_MULTIPLE_MATCHING_KEYS";
+  code = "ERR_JWKS_MULTIPLE_MATCHING_KEYS";
+  constructor(message2 = "multiple matching keys found in the JSON Web Key Set", options) {
+    super(message2, options);
+  }
+};
+var JWKSTimeout = class extends JOSEError {
+  static code = "ERR_JWKS_TIMEOUT";
+  code = "ERR_JWKS_TIMEOUT";
+  constructor(message2 = "request timed out", options) {
+    super(message2, options);
+  }
+};
 var JWSSignatureVerificationFailed = class extends JOSEError {
   static code = "ERR_JWS_SIGNATURE_VERIFICATION_FAILED";
   code = "ERR_JWS_SIGNATURE_VERIFICATION_FAILED";
@@ -71989,6 +72016,9 @@ function isObject(input) {
   }
   const prototype = Object.getPrototypeOf(input);
   return prototype === null || Object.getPrototypeOf(prototype) === null;
+}
+function isJwkSet(input) {
+  return isObject(input) && Array.isArray(input.keys) && Array.from(input.keys).every(isObject);
 }
 
 // node_modules/jose/dist/webapi/lib/helpers.js
@@ -72543,6 +72573,205 @@ async function jwtVerify(jwt, key, options) {
     return { ...result, key: verified[3] };
   }
   return result;
+}
+
+// node_modules/jose/dist/webapi/jwks/local.js
+function isUsableJWK(jwk, entry, alg, kid) {
+  const { kty, key_ops, ext, kid: jwkKid, alg: jwkAlg, use, crv } = snapshotJwk(jwk);
+  const keyOps = Array.isArray(key_ops) ? [...key_ops] : key_ops;
+  return (ext === void 0 || typeof ext === "boolean") && (keyOps === void 0 || Array.isArray(keyOps) && keyOps.every((operation2, index) => typeof operation2 === "string" && keyOps.indexOf(operation2) === index) && keyOps.includes("verify")) && entry.kty.includes(kty) && (kid === void 0 || typeof kid === "string" && kid === jwkKid) && (jwkAlg === void 0 ? kty !== "AKP" : alg === jwkAlg) && (use === void 0 || use === "sig") && (!entry.crv || crv === entry.crv);
+}
+async function importWithAlgCache(cache6, jwk, entry) {
+  const cached2 = cache6.get(jwk) || cache6.set(jwk, {}).get(jwk);
+  const { alg } = entry;
+  if (cached2[alg] === void 0) {
+    const key = await jwkToKey(entry, { ...jwk, alg, ext: true });
+    if (key.type !== "public") {
+      throw new JWKSInvalid("JSON Web Key Set members must be public keys");
+    }
+    cached2[alg] = key;
+  }
+  return cached2[alg];
+}
+function createLocalJWKSet(jwks) {
+  let snapshot;
+  try {
+    snapshot = structuredClone(jwks);
+  } catch {
+  }
+  if (!isJwkSet(snapshot)) {
+    throw new JWKSInvalid("JSON Web Key Set malformed");
+  }
+  const cached2 = /* @__PURE__ */ new WeakMap();
+  const localJWKSet = async (protectedHeader, token) => {
+    const { alg, kid } = { ...protectedHeader, ...token?.header };
+    const entry = typeof alg === "string" ? JWS[alg] : void 0;
+    if (!entry || entry.secret) {
+      throw new JOSENotSupported('Unsupported "alg" value for a JSON Web Key Set');
+    }
+    const candidates = snapshot.keys.filter((jwk2) => isUsableJWK(jwk2, entry, alg, kid));
+    const { 0: jwk, length } = candidates;
+    if (!length) {
+      throw new JWKSNoMatchingKey();
+    }
+    if (length !== 1) {
+      const error2 = new JWKSMultipleMatchingKeys();
+      error2[Symbol.asyncIterator] = async function* () {
+        for (const jwk2 of candidates) {
+          try {
+            yield await importWithAlgCache(cached2, jwk2, entry);
+          } catch {
+          }
+        }
+      };
+      throw error2;
+    }
+    return importWithAlgCache(cached2, jwk, entry);
+  };
+  return Object.defineProperty(localJWKSet, "jwks", {
+    value: () => structuredClone(snapshot)
+  });
+}
+
+// node_modules/jose/dist/webapi/jwks/remote.js
+function isCloudflareWorkers() {
+  return typeof WebSocketPair !== "undefined" || typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers" || typeof EdgeRuntime !== "undefined" && EdgeRuntime === "vercel";
+}
+var USER_AGENT;
+if (typeof navigator === "undefined" || !navigator.userAgent?.startsWith?.("Mozilla/5.0 ")) {
+  const NAME = "jose";
+  const VERSION = "v6.2.10";
+  USER_AGENT = `${NAME}/${VERSION}`;
+}
+var customFetch = Symbol();
+async function fetchJwks(url, headers, signal, fetchImpl = fetch) {
+  const response = await fetchImpl(url, {
+    method: "GET",
+    signal,
+    redirect: "manual",
+    headers
+  }).catch((err) => {
+    if (err.name === "TimeoutError") {
+      throw new JWKSTimeout();
+    }
+    throw err;
+  });
+  if (response.status !== 200) {
+    throw new JOSEError("Expected 200 OK from the JSON Web Key Set HTTP response");
+  }
+  try {
+    return await response.json();
+  } catch {
+    throw new JOSEError("Failed to parse the JSON Web Key Set HTTP response as JSON");
+  }
+}
+var jwksCache = Symbol();
+function isFreshFor(timestamp, duration) {
+  return Number.isFinite(timestamp) && Date.now() < timestamp + duration;
+}
+function validateDuration(value, fallback2, option) {
+  if (Number.isNaN(value)) {
+    throw new TypeError(`"${option}" option must not be NaN`);
+  }
+  return typeof value === "number" ? value : fallback2;
+}
+function createRemoteJWKSet(url, options) {
+  if (!(url instanceof URL)) {
+    throw new TypeError("url must be an instance of URL");
+  }
+  const href = new URL(url.href).href;
+  const opts = options ?? {};
+  const timeoutOption = opts.timeoutDuration;
+  if (typeof timeoutOption === "number" && (!Number.isInteger(timeoutOption) || timeoutOption < 0)) {
+    throw new TypeError('"timeoutDuration" option must be a non-negative integer');
+  }
+  const timeoutDuration = typeof timeoutOption === "number" ? timeoutOption : 5e3;
+  const cooldownDuration = validateDuration(opts.cooldownDuration, 3e4, "cooldownDuration");
+  const cacheMaxAge = validateDuration(opts.cacheMaxAge, 6e5, "cacheMaxAge");
+  const headers = new Headers(opts.headers);
+  if (USER_AGENT && !headers.has("User-Agent")) {
+    headers.set("User-Agent", USER_AGENT);
+  }
+  if (!headers.has("accept")) {
+    headers.set("accept", "application/json, application/jwk-set+json");
+  }
+  const fetchImpl = opts[customFetch];
+  const cache6 = opts[jwksCache];
+  let jwksTimestamp;
+  let pendingFetch;
+  let reloadSequence = 0;
+  let appliedSequence = 0;
+  let local;
+  if (cache6 && typeof cache6 === "object") {
+    const { uat, jwks } = cache6;
+    if (isFreshFor(uat, cacheMaxAge) && isJwkSet(jwks)) {
+      jwksTimestamp = uat;
+      local = createLocalJWKSet(jwks);
+    }
+  }
+  const reload = async () => {
+    if (pendingFetch && isCloudflareWorkers()) {
+      pendingFetch = void 0;
+    }
+    if (!pendingFetch) {
+      const sequence = ++reloadSequence;
+      const current = pendingFetch = fetchJwks(href, headers, AbortSignal.timeout(timeoutDuration), fetchImpl).then((json) => {
+        const next = createLocalJWKSet(json);
+        if (sequence <= appliedSequence) {
+          return;
+        }
+        local = next;
+        const updatedAt = Date.now();
+        if (cache6) {
+          cache6.uat = updatedAt;
+          cache6.jwks = json;
+        }
+        jwksTimestamp = updatedAt;
+        appliedSequence = sequence;
+      }).finally(() => {
+        if (pendingFetch === current) {
+          pendingFetch = void 0;
+        }
+      });
+    }
+    await pendingFetch;
+  };
+  const remoteJWKSet = async (protectedHeader, token) => {
+    if (!local || !isFreshFor(jwksTimestamp, cacheMaxAge)) {
+      await reload();
+    }
+    try {
+      return await local(protectedHeader, token);
+    } catch (err) {
+      if (err instanceof JWKSNoMatchingKey && !isFreshFor(jwksTimestamp, cooldownDuration)) {
+        await reload();
+        return local(protectedHeader, token);
+      }
+      throw err;
+    }
+  };
+  return Object.defineProperties(remoteJWKSet, {
+    coolingDown: {
+      get: () => isFreshFor(jwksTimestamp, cooldownDuration),
+      enumerable: true
+    },
+    fresh: {
+      get: () => isFreshFor(jwksTimestamp, cacheMaxAge),
+      enumerable: true
+    },
+    reload: {
+      value: reload,
+      enumerable: true
+    },
+    reloading: {
+      get: () => !!pendingFetch,
+      enumerable: true
+    },
+    jwks: {
+      value: () => local?.jwks(),
+      enumerable: true
+    }
+  });
 }
 
 // src/types/dtos.ts
@@ -76538,10 +76767,12 @@ adminDashboardRouter.get(
 var import_express7 = __toESM(require_express2(), 1);
 
 // src/middleware/jwtAuth.ts
-if (!process.env.SUPABASE_JWT_SECRET) {
-  throw new Error("SUPABASE_JWT_SECRET environment variable is required.");
+if (!process.env.SUPABASE_URL) {
+  throw new Error("SUPABASE_URL environment variable is required.");
 }
-var secretKey = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET);
+var JWKS = createRemoteJWKSet(
+  new URL(`${process.env.SUPABASE_URL}/auth/v1/.well-known/jwks.json`)
+);
 function sendUnauthorized(res, req, detail) {
   res.status(401).json({
     type: "about:unauthorized",
@@ -76559,9 +76790,7 @@ async function jwtAuth(req, res, next) {
   }
   const token = authHeader.slice(7);
   try {
-    const { payload: payload2 } = await jwtVerify(token, secretKey, {
-      algorithms: ["HS256"]
-    });
+    const { payload: payload2 } = await jwtVerify(token, JWKS);
     req.user = {
       id: payload2.sub,
       email: payload2.email
@@ -77609,7 +77838,7 @@ async function searchOrder(publicId, email) {
 
 // src/routes/user/orders.ts
 var userOrdersRouter = (0, import_express9.Router)();
-var secretKey2 = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
+var secretKey = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
 function toOrderDto(order) {
   return {
     publicId: order.public_id,
@@ -77672,7 +77901,7 @@ userOrdersRouter.post(
       if (authHeader && authHeader.startsWith("Bearer ")) {
         const token = authHeader.slice(7);
         try {
-          const { payload: payload2 } = await jwtVerify(token, secretKey2, { algorithms: ["HS256"] });
+          const { payload: payload2 } = await jwtVerify(token, secretKey, { algorithms: ["HS256"] });
           userId = payload2.sub ?? null;
         } catch {
         }
@@ -95841,7 +96070,7 @@ var stripe = new stripe_esm_node_default(process.env.STRIPE_SECRET_KEY, {
 
 // src/routes/checkout.ts
 var checkoutRouter = (0, import_express12.Router)();
-var secretKey3 = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
+var secretKey2 = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
 var CartItemInputSchema = external_exports.object({
   bundlePublicId: external_exports.string().min(1),
   upgradeTier: external_exports.enum(["STANDARD", "PREMIUM"]).default("STANDARD"),
@@ -95936,7 +96165,7 @@ checkoutRouter.post(
       const authHeader = req.headers.authorization;
       if (authHeader?.startsWith("Bearer ")) {
         try {
-          const { payload: payload2 } = await jwtVerify(authHeader.slice(7), secretKey3, { algorithms: ["HS256"] });
+          const { payload: payload2 } = await jwtVerify(authHeader.slice(7), secretKey2, { algorithms: ["HS256"] });
           userId = payload2.sub ?? null;
         } catch {
         }
@@ -96161,10 +96390,9 @@ futurePartiesRouter.post(
         source: parsed.source ?? null
       });
       if (parsed.source === "signup-promotion") {
-        sendSignupPromotionEmail({
+        await sendSignupPromotionEmail({
           toEmail: parsed.email,
           redemptionCode: row.redemption_code ?? ""
-        }).catch(() => {
         });
       }
       res.status(201).json(toFuturePartyDto(row));
