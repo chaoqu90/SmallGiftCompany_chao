@@ -10,7 +10,7 @@
  * Requirements: R2 (AC2.4, AC2.5)
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link as RouterLink } from 'react-router-dom'
 import {
   Box,
   Button,
@@ -94,9 +94,17 @@ export function EmailVerificationNoticePage() {
           component="button"
           variant="body2"
           onClick={handleSignOut}
-          sx={{ display: 'block', textAlign: 'center' }}
+          sx={{ display: 'block', textAlign: 'center', mb: 1 }}
         >
           Sign out
+        </Link>
+        <Link
+          component={RouterLink}
+          to="/"
+          variant="body2"
+          sx={{ display: 'block', textAlign: 'center' }}
+        >
+          Back to Home
         </Link>
       </Paper>
     </Box>

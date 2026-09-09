@@ -4,7 +4,7 @@
  * Requirements: R1 (AC1.1–AC1.5), R4 (AC4.1–AC4.4)
  */
 import { useState } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Box,
   Button,
@@ -19,11 +19,11 @@ import {
 import { supabase } from '../lib/supabaseClient'
 
 export function RegisterPage() {
+  const navigate = useNavigate()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [confirm,  setConfirm]  = useState('')
   const [error,    setError]    = useState<string | null>(null)
-  const [success,  setSuccess]  = useState(false)
   const [loading,  setLoading]  = useState(false)
 
   // Inline field-level validation errors (AC1.2)
@@ -66,7 +66,6 @@ export function RegisterPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
-    setSuccess(false)
 
     // Client-side validation runs before any network call (AC1.2)
     if (!validate()) return
@@ -76,8 +75,7 @@ export function RegisterPage() {
     setLoading(false)
 
     if (!authError) {
-      // AC1.3 — show success message; do NOT navigate
-      setSuccess(true)
+      navigate('/verify-email')
       return
     }
 
@@ -109,12 +107,6 @@ export function RegisterPage() {
         <Typography variant="h5" fontWeight={700} mb={3}>
           Create account
         </Typography>
-
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Check your inbox for a verification email.
-          </Alert>
-        )}
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>

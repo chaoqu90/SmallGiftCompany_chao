@@ -81,15 +81,14 @@ futurePartiesRouter.post(
         source:    parsed.source ?? null,
       });
 
-      // 5. Signup-promotion email — fire-and-forget (FEAT-005 AC4.1, AC4.6)
-      // Intentionally NOT awaited — the 201 response is returned immediately.
-      // sendSignupPromotionEmail swallows SES errors internally with console.warn.
+      // 5. Signup-promotion email — awaited before responding.
+      // Lambda freezes the execution context immediately after the response is sent,
+      // so fire-and-forget Promises are never resolved. SES errors are swallowed
+      // inside sendSignupPromotionEmail with console.warn — the 201 is still returned.
       if (parsed.source === 'signup-promotion') {
-        sendSignupPromotionEmail({
+        await sendSignupPromotionEmail({
           toEmail:        parsed.email,
           redemptionCode: row.redemption_code ?? '',
-        }).catch(() => {
-          // Already logged inside sendSignupPromotionEmail (AC4.6)
         });
       }
 
