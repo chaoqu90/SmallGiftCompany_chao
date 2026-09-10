@@ -20,7 +20,13 @@
     "migrate:local:down": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx down",
     "migrate:local:status": "node --env-file=.env ./node_modules/.bin/node-pg-migrate --tsx status",
     "cleanup-bundles": "node --env-file=.env ./node_modules/.bin/tsx scripts/cleanup-old-bundles.ts",
-    "cleanup-bundles:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/cleanup-old-bundles.ts --force"
+    "cleanup-bundles:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/cleanup-old-bundles.ts --force",
+    "reset-test-data": "node --env-file=.env ./node_modules/.bin/tsx scripts/reset-test-data.ts",
+    "reset-test-data:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/reset-test-data.ts --force",
+    "import-products": "node --env-file=.env ./node_modules/.bin/tsx scripts/import-products-xlsx.ts",
+    "import-products:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/import-products-xlsx.ts --force",
+    "upload-images": "node --env-file=.env ./node_modules/.bin/tsx scripts/upload-product-images.ts",
+    "upload-images:force": "node --env-file=.env ./node_modules/.bin/tsx scripts/upload-product-images.ts --force"
   },
   "node-pg-migrate": {
     "migrationsTable": "pgmigrations",
@@ -54,6 +60,7 @@
     "supertest": "^7.0.0",
     "tsx": "^4.16.2",
     "typescript": "^5.5.4",
-    "vitest": "^2.0.5"
+    "vitest": "^2.0.5",
+    "xlsx": "^0.18.5"
   }
 }

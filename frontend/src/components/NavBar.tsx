@@ -73,7 +73,7 @@ export function NavBar() {
   }
 
   return (
-    <AppBar position="static" color="default" elevation={1} sx={{ bgcolor: '#fff' }}>
+    <AppBar position="static" color="default" elevation={1} sx={{ bgcolor: '#F0E9DF' }}>
       <Toolbar sx={{ justifyContent: 'space-between' }}>
         {/* ── Left: App name / logo ────────────────────────────────────── */}
         <Typography

@@ -462,6 +462,34 @@ function ProductRows({
             <Box sx={{ px: 3, py: 2.5, bgcolor: '#FAFAFA', borderTop: '1px solid #F0F0F0' }}>
               <Box sx={{ display: 'flex', gap: 4, alignItems: 'flex-start' }}>
 
+                {/* ── Product image (1/4 width) ── */}
+                <Box
+                  sx={{
+                    width: '25%',
+                    flexShrink: 0,
+                    aspectRatio: '1',
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    backgroundColor: '#F0EDE8',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {product.imageUrl ? (
+                    <Box
+                      component="img"
+                      src={product.imageUrl}
+                      alt={product.name}
+                      sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                  ) : (
+                    <Typography sx={{ fontSize: '0.7rem', color: '#A0A0A8', textAlign: 'center', px: 1 }}>
+                      No image
+                    </Typography>
+                  )}
+                </Box>
+
                 {/* ── Editable fields grid ── */}
                 <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2.5 }}>
 

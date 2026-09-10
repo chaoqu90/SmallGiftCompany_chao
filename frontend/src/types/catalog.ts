@@ -23,15 +23,18 @@ export interface GeneratedBundleItemDto {
   formFactor: string
   quantityPerBag: number
   displayOrder: number
+  imageUrl: string | null
 }
 
 export interface GeneratedBundleUpgradeDto {
   standardProductName: string | null
   standardSku: string | null
   standardRetailAdjustment: number | null
+  standardImageUrl: string | null
   upgradedProductName: string | null
   upgradedSku: string | null
   upgradedRetailAdjustment: number | null
+  upgradedImageUrl: string | null
 }
 
 export interface GeneratedBundleGiftBagDto {

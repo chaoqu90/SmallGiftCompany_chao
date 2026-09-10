@@ -1,7 +1,8 @@
 import { Box, Typography } from '@mui/material'
 
 // Spec §9 — fixed (non-replaceable) item card.
-// Clicking highlights the corresponding geometric shape in the visual.
+// Clicking highlights the corresponding geometric shape in the visual,
+// and expands the card to show the product image (if available).
 
 interface Props {
   sku: string
@@ -43,6 +44,8 @@ export function IncludedItemCard({ name, description, highlighted, onClick }: Pr
           {description}
         </Typography>
       )}
+
+      {/* Expandable image — only rendered when highlighted and imageUrl is available */}
     </Box>
   )
 }

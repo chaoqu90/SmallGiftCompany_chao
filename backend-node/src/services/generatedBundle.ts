@@ -34,6 +34,7 @@ export async function getByPublicId(
       formFactor: item.form_factor_snapshot,
       quantityPerBag: item.quantity_per_bag,
       displayOrder: item.display_order,
+      imageUrl: (item as { image_url?: string | null }).image_url ?? null,
     })),
     upgrade:
       upgrade && (upgrade.standard_product_name_snapshot || upgrade.product_name_snapshot)
@@ -43,11 +44,13 @@ export async function getByPublicId(
             standardRetailAdjustment: upgrade.standard_retail_adjustment_snapshot
               ? parseFloat(upgrade.standard_retail_adjustment_snapshot)
               : null,
+            standardImageUrl: (upgrade as { standard_image_url?: string | null }).standard_image_url ?? null,
             upgradedProductName: upgrade.product_name_snapshot,
             upgradedSku: upgrade.sku_snapshot,
             upgradedRetailAdjustment: upgrade.retail_price_adjustment_snapshot
               ? parseFloat(upgrade.retail_price_adjustment_snapshot)
               : null,
+            upgradedImageUrl: (upgrade as { upgraded_image_url?: string | null }).upgraded_image_url ?? null,
           }
         : null,
     giftBag: giftBag

@@ -356,7 +356,7 @@ export function SignupPromotionModal({ open, onClose }: SignupPromotionModalProp
                 set({ kidAge: v === '' ? '' : Number(v), ageError: null })
               }}
               error={!!state.ageError}
-              helperText={state.ageError ?? 'Age 1–12'}
+              helperText={state.ageError ?? ''}
               disabled={state.submitting}
               fullWidth
               size="small"

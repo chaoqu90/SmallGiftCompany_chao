@@ -212,14 +212,21 @@ export async function findBundleByPublicId(
   const bundleRow = bundles[0];
 
   const [items, upgrades, giftBags] = await Promise.all([
-    sql<GeneratedBundleItemRow[]>`
-      SELECT * FROM generated_bundle_item
-      WHERE generated_bundle_id = ${bundleRow.id}
-      ORDER BY display_order ASC
+    sql<(GeneratedBundleItemRow & { image_url: string | null })[]>`
+      SELECT gbi.*, p.image_url
+      FROM generated_bundle_item gbi
+      LEFT JOIN product p ON p.sku = gbi.sku_snapshot
+      WHERE gbi.generated_bundle_id = ${bundleRow.id}
+      ORDER BY gbi.display_order ASC
     `,
-    sql<GeneratedBundleUpgradeRow[]>`
-      SELECT * FROM generated_bundle_upgrade
-      WHERE generated_bundle_id = ${bundleRow.id}
+    sql<(GeneratedBundleUpgradeRow & { standard_image_url: string | null; upgraded_image_url: string | null })[]>`
+      SELECT gbu.*,
+        ps.image_url AS standard_image_url,
+        pu.image_url AS upgraded_image_url
+      FROM generated_bundle_upgrade gbu
+      LEFT JOIN product ps ON ps.sku = gbu.standard_sku_snapshot
+      LEFT JOIN product pu ON pu.sku = gbu.sku_snapshot
+      WHERE gbu.generated_bundle_id = ${bundleRow.id}
     `,
     sql<(GeneratedBundleGiftBagRow & { gift_bag_option_code: string })[]>`
       SELECT gbg.*, gbo.code AS gift_bag_option_code

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Box, Button, CircularProgress, Container, Grid2, MenuItem, Select, Stack, Typography,
+  Box, Button, CircularProgress, Container, Dialog, Grid2, MenuItem, Select, Stack, Tooltip, Typography,
 } from '@mui/material'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import { getGeneratedBundle } from '../api/generatedBundles'
 import { trackEvent } from '../api/analytics'
@@ -45,6 +46,7 @@ export function BundleCustomizationPage() {
   const [addingToCart, setAddingToCart] = useState(false)
 
   const [highlightedSku,  setHighlightedSku]  = useState<string | null>(null)
+  const [lightboxUrl,     setLightboxUrl]     = useState<string | null>(null)
   const [upgradeOptionId, setUpgradeOptionId] = useState<string>('standard')
   const [giftBagOptionId, setGiftBagOptionId] = useState<string>('classic')
   const [quantity,        setQuantity]        = useState<number>(10)
@@ -57,14 +59,21 @@ export function BundleCustomizationPage() {
     if (cachedJson) {
       try {
         const parsed = JSON.parse(cachedJson) as GeneratedBundleResponse
-        setBundle(parsed)
-        setGiftBagOptionId(parsed.giftBag?.code ?? 'classic')
-        setLoading(false)
-        if (!viewTracked.current) {
-          viewTracked.current = true
-          trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId })
+        // If cached bundle items are missing imageUrl, discard the cache so we
+        // re-fetch from the API which includes the image URLs via JOIN.
+        const hasImages = parsed.items.every(item => 'imageUrl' in item)
+        if (!hasImages) {
+          sessionStorage.removeItem(`bundle:${bundleId}`)
+        } else {
+          setBundle(parsed)
+          setGiftBagOptionId(parsed.giftBag?.code ?? 'classic')
+          setLoading(false)
+          if (!viewTracked.current) {
+            viewTracked.current = true
+            trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId })
+          }
+          return
         }
-        return
       } catch {
         // Corrupt cache entry — fall through to API fetch
         sessionStorage.removeItem(`bundle:${bundleId}`)
@@ -139,10 +148,10 @@ export function BundleCustomizationPage() {
       id: 'standard',
       label: bundle.upgrade.standardProductName,
       description: 'The included option',
-      meta: 'Included',
+      meta: '',
     })
   } else {
-    upgradeOptions.push({ id: 'standard', label: 'Standard', description: 'The original curated set', meta: 'Included' })
+    upgradeOptions.push({ id: 'standard', label: 'Standard', description: 'The original curated set', meta: '' })
   }
   if (bundle.upgrade?.upgradedProductName) {
     const adj = bundle.upgrade.upgradedRetailAdjustment
@@ -215,7 +224,7 @@ export function BundleCustomizationPage() {
 
         <Grid2 container spacing={{ xs: 3, md: 6 }} alignItems="flex-start">
 
-          {/* ── Left column: geometric visual ────────────────────────────── */}
+          {/* ── Left column: geometric visual + image gallery ─────────────── */}
           <Grid2
             size={{ xs: 12, md: 6 }}
             sx={{ position: { md: 'sticky' }, top: { md: 72 } }}
@@ -225,6 +234,122 @@ export function BundleCustomizationPage() {
               highlightedSku={highlightedSku}
               onShapeClick={(sku) => setHighlightedSku((prev) => prev === sku ? null : sku)}
             />
+
+            {/* ── Product image gallery (2 rows × 4 cols) ──────────────────── */}
+            {(() => {
+              // 4 fixed items + standard upgrade + premium upgrade (no bag slot)
+              const gallerySlots: { key: string; label: string; imageUrl: string | null; sku: string | null; included: boolean }[] = [
+                ...displayedItems.map(item => ({ key: item.sku, label: item.productName, imageUrl: item.imageUrl, sku: item.sku, included: true })),
+                ...(bundle.upgrade?.standardProductName ? [{
+                  key: '__standard__',
+                  label: bundle.upgrade.standardProductName,
+                  imageUrl: bundle.upgrade.standardImageUrl ?? null,
+                  sku: bundle.upgrade.standardSku ?? null,
+                  included: upgradeOptionId === 'standard',
+                }] : []),
+                ...(bundle.upgrade?.upgradedProductName ? [{
+                  key: '__upgraded__',
+                  label: bundle.upgrade.upgradedProductName,
+                  imageUrl: bundle.upgrade.upgradedImageUrl ?? null,
+                  sku: bundle.upgrade.upgradedSku ?? null,
+                  included: upgradeOptionId === 'upgraded',
+                }] : []),
+              ]
+
+              const hasAnyImage = gallerySlots.some(s => s.imageUrl)
+              if (!hasAnyImage) return null
+
+              return (
+                <Box sx={{ mt: 2, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1 }}>
+                  {gallerySlots.map((slot) => {
+                    const isHighlighted = slot.sku !== null && highlightedSku === slot.sku
+                    return (
+                      <Tooltip key={slot.key} title={slot.label} placement="top" arrow>
+                        <Box
+                          onClick={() => {
+                            if (slot.sku) handleItemClick(slot.sku)
+                            if (slot.imageUrl) setLightboxUrl(slot.imageUrl)
+                          }}
+                          sx={{
+                            position: 'relative',
+                            aspectRatio: '1',
+                            borderRadius: '10px',
+                            overflow: 'hidden',
+                            cursor: slot.imageUrl ? 'zoom-in' : 'default',
+                            border: isHighlighted ? '2.5px solid #4A6FA5' : '2px solid transparent',
+                            backgroundColor: '#F0EDE8',
+                            transition: 'border-color 150ms ease, box-shadow 150ms ease',
+                            boxShadow: isHighlighted ? '0 0 0 3px #4A6FA530' : 'none',
+                            '&:hover': { borderColor: slot.imageUrl ? '#A0A0A8' : 'transparent' },
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {slot.imageUrl ? (
+                            <Box
+                              component="img"
+                              src={slot.imageUrl}
+                              alt={slot.label}
+                              sx={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                opacity: highlightedSku && !isHighlighted ? 0.4 : 1,
+                                transition: 'opacity 200ms ease',
+                              }}
+                            />
+                          ) : (
+                            <Typography sx={{ fontSize: '0.6rem', color: '#A0A0A8', textAlign: 'center', px: 0.5, lineHeight: 1.3 }}>
+                              {slot.label}
+                            </Typography>
+                          )}
+
+                          {/* Checkmark — shown when item is included in the current selection */}
+                          {slot.included && (
+                            <CheckCircleIcon
+                              sx={{
+                                position: 'absolute',
+                                top: 4,
+                                right: 4,
+                                fontSize: '1rem',
+                                color: '#F47F6B',
+                                backgroundColor: 'white',
+                                borderRadius: '50%',
+                                pointerEvents: 'none',
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Tooltip>
+                    )
+                  })}
+                </Box>
+              )
+            })()}
+
+            {/* ── Lightbox ──────────────────────────────────────────────────── */}
+            <Dialog
+              open={!!lightboxUrl}
+              onClose={() => setLightboxUrl(null)}
+              maxWidth="md"
+              PaperProps={{ sx: { backgroundColor: 'transparent', boxShadow: 'none' } }}
+            >
+              <Box
+                component="img"
+                src={lightboxUrl ?? ''}
+                alt="Product"
+                onClick={() => setLightboxUrl(null)}
+                sx={{
+                  maxWidth: '90vw',
+                  maxHeight: '90vh',
+                  objectFit: 'contain',
+                  borderRadius: '12px',
+                  cursor: 'zoom-out',
+                  display: 'block',
+                }}
+              />
+            </Dialog>
           </Grid2>
 
           {/* ── Right column: configurator panel ─────────────────────────── */}
