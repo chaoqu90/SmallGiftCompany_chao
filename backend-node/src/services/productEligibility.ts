@@ -59,18 +59,16 @@ export function isOccasionEligible(
 /**
  * Returns true if the product is compatible with the requested audience preference.
  *
- * Audience compatibility rules (mirrors ProductEligibilityService.java):
- *   FEMININE request:
- *     → Keep products with FEMININE or UNIVERSAL audience affinity.
- *     → Reject products that ONLY have MASCULINE affinity.
- *     → Accept products with NO audience affinity (neutral).
+ * Hard filter rules:
  *   MASCULINE request:
- *     → Keep products with MASCULINE or UNIVERSAL audience affinity.
- *     → Reject products that ONLY have FEMININE affinity.
- *     → Accept products with NO audience affinity (neutral).
+ *     → Accept: MASCULINE, UNIVERSAL, or no affinity.
+ *     → Reject: any product tagged FEMININE (even if also UNIVERSAL).
+ *   FEMININE request:
+ *     → Accept: FEMININE, UNIVERSAL, or no affinity.
+ *     → Reject: any product tagged MASCULINE (even if also UNIVERSAL).
  *   NO_PREFERENCE request:
- *     → Keep only UNIVERSAL products (drop FEMININE-only and MASCULINE-only).
- *     → Accept products with NO audience affinity (neutral).
+ *     → Accept: UNIVERSAL or no affinity.
+ *     → Reject: any product tagged FEMININE or MASCULINE.
  */
 export function isAudienceCompatible(
   product: ProductRow,
@@ -81,28 +79,26 @@ export function isAudienceCompatible(
   const hasFeminine = affinityMaps.audience.has(`${productId}:FEMININE`);
   const hasMasculine = affinityMaps.audience.has(`${productId}:MASCULINE`);
   const hasUniversal = affinityMaps.audience.has(`${productId}:UNIVERSAL`);
-  const hasNoAffinity = !hasFeminine && !hasMasculine && !hasUniversal;
-
-  if (audience === 'FEMININE') {
-    // Reject products that are explicitly MASCULINE-only
-    if (hasMasculine && !hasFeminine && !hasUniversal) return false;
-    return true;
-  }
 
   if (audience === 'MASCULINE') {
-    // Reject products that are explicitly FEMININE-only
-    if (hasFeminine && !hasMasculine && !hasUniversal) return false;
-    return true;
+    // Reject anything tagged FEMININE
+    if (hasFeminine) return false;
+    return hasMasculine || hasUniversal || (!hasFeminine && !hasMasculine && !hasUniversal);
+  }
+
+  if (audience === 'FEMININE') {
+    // Reject anything tagged MASCULINE
+    if (hasMasculine) return false;
+    return hasFeminine || hasUniversal || (!hasFeminine && !hasMasculine && !hasUniversal);
   }
 
   if (audience === 'NO_PREFERENCE') {
-    // Keep only UNIVERSAL or neutral (no affinity)
-    if (hasFeminine && !hasUniversal) return false;
-    if (hasMasculine && !hasUniversal) return false;
+    // Reject anything gender-specific
+    if (hasFeminine || hasMasculine) return false;
     return true;
   }
 
-  return hasNoAffinity || hasUniversal;
+  return !hasFeminine && !hasMasculine;
 }
 
 /**
