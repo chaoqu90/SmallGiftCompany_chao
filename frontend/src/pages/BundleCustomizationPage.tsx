@@ -220,7 +220,7 @@ export function BundleCustomizationPage() {
       </Box>
 
       {/* ── Scrollable content ───────────────────────────────────────────── */}
-      <Container maxWidth="lg" sx={{ pt: { xs: 3, md: 5 } }}>
+      <Container maxWidth="lg" sx={{ pt: { xs: 3, md: 5 }, pb: { xs: 5, md: 8 } }}>
 
         <Grid2 container spacing={{ xs: 3, md: 6 }} alignItems="flex-start">
 
@@ -474,6 +474,7 @@ export function BundleCustomizationPage() {
           sx={{
             position: 'sticky',
             bottom: 0,
+            mt: { xs: 6, md: 8 },
             zIndex: 100,
             mx: { xs: -2, sm: -3 },
             px: { xs: 2, sm: 3 },
@@ -576,7 +577,7 @@ export function BundleCustomizationPage() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {addingToCart ? 'Adding…' : `Continue with ${quantity} Party Bag${quantity !== 1 ? 's' : ''} →`}
+                {addingToCart ? 'Adding…' : 'Continue'}
               </Button>
             </Box>
           )}
