@@ -73193,11 +73193,13 @@ async function generate(request, repos, userId) {
       standardSkuSnapshot: std?.sku ?? null,
       standardCostSnapshot: std ? parseFloat(std.cost) : null,
       standardRetailAdjustmentSnapshot: stdRetailPrice,
+      standardImageUrl: std?.image_url ?? null,
       premiumProductId: prem?.id ?? null,
       premiumProductNameSnapshot: prem?.name ?? null,
       premiumSkuSnapshot: prem?.sku ?? null,
       premiumCostSnapshot: prem ? parseFloat(prem.cost) : null,
-      premiumRetailAdjustmentSnapshot: premRetailAdj
+      premiumRetailAdjustmentSnapshot: premRetailAdj,
+      premiumImageUrl: prem?.image_url ?? null
     };
   }
   const snapshot = {
@@ -73220,7 +73222,8 @@ async function generate(request, repos, userId) {
       descriptionSnapshot: s2.product.description,
       formFactorSnapshot: s2.product.form_factor,
       quantityPerBag: 1,
-      displayOrder: s2.slot.display_order
+      displayOrder: s2.slot.display_order,
+      imageUrl: s2.product.image_url ?? null
     })),
     upgrade: upgradeSnapshot,
     giftBag: {
@@ -73264,15 +73267,18 @@ function buildResponse(publicId, templateCode, snapshot) {
       description: item.descriptionSnapshot,
       formFactor: item.formFactorSnapshot,
       quantityPerBag: item.quantityPerBag,
-      displayOrder: item.displayOrder
+      displayOrder: item.displayOrder,
+      imageUrl: item.imageUrl ?? null
     })),
     upgrade: snapshot.upgrade ? {
       standardProductName: snapshot.upgrade.standardProductNameSnapshot,
       standardSku: snapshot.upgrade.standardSkuSnapshot,
       standardRetailAdjustment: snapshot.upgrade.standardRetailAdjustmentSnapshot,
+      standardImageUrl: snapshot.upgrade.standardImageUrl ?? null,
       upgradedProductName: snapshot.upgrade.premiumProductNameSnapshot,
       upgradedSku: snapshot.upgrade.premiumSkuSnapshot,
-      upgradedRetailAdjustment: snapshot.upgrade.premiumRetailAdjustmentSnapshot
+      upgradedRetailAdjustment: snapshot.upgrade.premiumRetailAdjustmentSnapshot,
+      upgradedImageUrl: snapshot.upgrade.premiumImageUrl ?? null
     } : null,
     giftBag: snapshot.giftBag ? {
       code: snapshot.giftBag.giftBagOptionCode,
@@ -75516,13 +75522,20 @@ async function findBundleByPublicId(publicId) {
   const bundleRow = bundles[0];
   const [items, upgrades, giftBags] = await Promise.all([
     sql`
-      SELECT * FROM generated_bundle_item
-      WHERE generated_bundle_id = ${bundleRow.id}
-      ORDER BY display_order ASC
+      SELECT gbi.*, p.image_url
+      FROM generated_bundle_item gbi
+      LEFT JOIN product p ON p.sku = gbi.sku_snapshot
+      WHERE gbi.generated_bundle_id = ${bundleRow.id}
+      ORDER BY gbi.display_order ASC
     `,
     sql`
-      SELECT * FROM generated_bundle_upgrade
-      WHERE generated_bundle_id = ${bundleRow.id}
+      SELECT gbu.*,
+        ps.image_url AS standard_image_url,
+        pu.image_url AS upgraded_image_url
+      FROM generated_bundle_upgrade gbu
+      LEFT JOIN product ps ON ps.sku = gbu.standard_sku_snapshot
+      LEFT JOIN product pu ON pu.sku = gbu.sku_snapshot
+      WHERE gbu.generated_bundle_id = ${bundleRow.id}
     `,
     sql`
       SELECT gbg.*, gbo.code AS gift_bag_option_code
@@ -75573,15 +75586,18 @@ async function getByPublicId(publicId) {
       description: item.description_snapshot,
       formFactor: item.form_factor_snapshot,
       quantityPerBag: item.quantity_per_bag,
-      displayOrder: item.display_order
+      displayOrder: item.display_order,
+      imageUrl: item.image_url ?? null
     })),
     upgrade: upgrade && (upgrade.standard_product_name_snapshot || upgrade.product_name_snapshot) ? {
       standardProductName: upgrade.standard_product_name_snapshot,
       standardSku: upgrade.standard_sku_snapshot,
       standardRetailAdjustment: upgrade.standard_retail_adjustment_snapshot ? parseFloat(upgrade.standard_retail_adjustment_snapshot) : null,
+      standardImageUrl: upgrade.standard_image_url ?? null,
       upgradedProductName: upgrade.product_name_snapshot,
       upgradedSku: upgrade.sku_snapshot,
-      upgradedRetailAdjustment: upgrade.retail_price_adjustment_snapshot ? parseFloat(upgrade.retail_price_adjustment_snapshot) : null
+      upgradedRetailAdjustment: upgrade.retail_price_adjustment_snapshot ? parseFloat(upgrade.retail_price_adjustment_snapshot) : null,
+      upgradedImageUrl: upgrade.upgraded_image_url ?? null
     } : null,
     giftBag: giftBag ? {
       code: giftBag.gift_bag_option_code ?? "",
@@ -77352,6 +77368,8 @@ function buildSignupPromotionHtml(data) {
   <ul style="line-height:1.8;">
     <li><strong>Date:</strong> Saturday, September 12, 2026</li>
     <li><strong>Time:</strong> 11 AM \u2013 3 PM</li>
+    <li><strong>Address:</strong> 21100 Dulles Town Cir, Dulles, VA 20166</li>
+    <li><strong>Booth:</strong> IT IS A SMALL GIFT COMPANY</li>
   </ul>
   <div style="background:#fff8f0;border:2px solid #f47f6b;border-radius:8px;padding:20px;text-align:center;margin:24px 0;">
     <p style="margin:0 0 8px;font-size:14px;color:#666;">Your redemption code</p>
@@ -77374,6 +77392,8 @@ function buildSignupPromotionText(data) {
     "",
     "  Date: Saturday, September 12, 2026",
     "  Time: 11 AM \u2013 3 PM",
+    "  Address: 21100 Dulles Town Cir, Dulles, VA 20166",
+    "  Booth: IT IS A SMALL GIFT COMPANY",
     "",
     `Your redemption code: ${data.redemptionCode}`,
     "",
