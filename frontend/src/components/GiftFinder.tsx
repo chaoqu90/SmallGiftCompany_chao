@@ -5,6 +5,7 @@ import {
   Box, Button, Chip, CircularProgress, Slider, Stack, Typography,
 } from '@mui/material'
 import { generateBundle } from '../api/generatedBundles'
+import type { ApiError } from '../api/client'
 import type { Interest, AudiencePreference, PartyType, BudgetTierCode } from '../types/catalog'
 import { COLORS } from '../theme'
 
@@ -157,8 +158,13 @@ export function GiftFinder() {
       sessionStorage.setItem(`bundle:${response.generatedBundleId}`, JSON.stringify(response))
       navigate(`/bundleCustomization/${response.generatedBundleId}`)
       trackEvent({ eventType: 'FINDER_COMPLETED', bundleId: response.generatedBundleId })
-    } catch {
-      setSubmitError('Something went wrong. Please try again.')
+    } catch (err) {
+      const failureCode = (err as ApiError).failureCode
+      if (failureCode === 'NO_BUDGET_FEASIBLE' || failureCode === 'INSUFFICIENT_ROLE_COVERAGE') {
+        setSubmitError('We couldn\'t find enough products that fit your budget. Try raising your budget a little and we\'ll put together a great bag for you!')
+      } else {
+        setSubmitError('Something went wrong. Please try again.')
+      }
     } finally {
       setSubmitting(false)
     }

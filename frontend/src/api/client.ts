@@ -3,6 +3,7 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 export type ApiError = {
   status: number
   message: string
+  failureCode?: string
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -15,10 +16,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   })
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
+    const body = await res.json().catch(() => ({})) as { detail?: string; failureCode?: string }
     const error: ApiError = {
       status: res.status,
-      message: (body as { detail?: string }).detail ?? res.statusText,
+      message: body.detail ?? res.statusText,
+      failureCode: body.failureCode,
     }
     throw error
   }

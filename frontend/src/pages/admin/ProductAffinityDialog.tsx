@@ -8,7 +8,7 @@ import { useAdminAuth } from '../../contexts/AdminAuthContext'
 
 const INTERESTS = ['POP_MUSIC', 'TOYS_PLAY', 'CUTE_MAGICAL', 'SPORTS', 'READING_PUZZLE']
 const AUDIENCES = ['FEMININE', 'MASCULINE', 'UNIVERSAL']
-const ROLES     = ['UTILITY', 'ACTIVITY', 'PLAY', 'WEARABLE', 'TACTILE', 'NOVELTY', 'COLLECTIBLE']
+const ROLES     = ['UTILITY', 'ACTIVITY', 'PLAY', 'WEARABLE', 'TACTILE', 'NOVELTY', 'COLLECTIBLE', 'SIMPLE_TOY', 'PUZZLE', 'READING', 'PREMIUM']
 const OCCASIONS = ['CELEBRATION', 'HALLOWEEN']
 
 interface Props {
