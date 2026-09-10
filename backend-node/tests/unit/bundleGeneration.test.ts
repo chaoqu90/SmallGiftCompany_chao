@@ -109,14 +109,14 @@ function makeRepos(overrides: Partial<GenerationRepos> = {}): GenerationRepos {
   const template = makeTemplate();
   const giftBag = makeGiftBag();
 
-  // Four products each filling one slot
+  // Four products each filling one slot — form_factor matches SLOT_FORM_FACTORS[idx]
   const products: ProductRow[] = [
-    makeProduct(1, { retail_price: '2.00' }),  // UTILITY slot
-    makeProduct(2, { retail_price: '2.00' }),  // ACTIVITY slot
-    makeProduct(3, { retail_price: '2.00' }),  // PLAY slot
-    makeProduct(4, { retail_price: '2.00' }),  // COLLECTIBLE slot
-    makeProduct(5, { retail_price: '3.00', upgrade_tier: 'STANDARD' }), // for upgrade
-    makeProduct(6, { retail_price: '4.00', upgrade_tier: 'PREMIUM' }),  // for upgrade
+    makeProduct(1, { retail_price: '2.00', form_factor: 'BAR' }),               // slot 0 UTILITY
+    makeProduct(2, { retail_price: '2.00', form_factor: 'FLAT_RECT' }),         // slot 1 ACTIVITY
+    makeProduct(3, { retail_price: '2.00', form_factor: 'IRREGULAR_VOLUME' }), // slot 2 PLAY
+    makeProduct(4, { retail_price: '2.00', form_factor: 'SMALL_VOLUME' }),      // slot 3 COLLECTIBLE
+    makeProduct(5, { retail_price: '3.00', upgrade_tier: 'STANDARD', form_factor: 'BAR' }), // for upgrade
+    makeProduct(6, { retail_price: '4.00', upgrade_tier: 'PREMIUM',  form_factor: 'FLAT_RECT' }),  // for upgrade
   ];
 
   const interestRows: ProductInterestAffinityRow[] = products.map(p => ({
@@ -210,11 +210,11 @@ describe('generate — PATH 3 (tight fallback)', () => {
     // Set an extremely tight budget — only STANDARD products can fit
     const repos = makeRepos({
       findAllEligibleForGeneration: async () => [
-        makeProduct(1, { retail_price: '1.00' }),  // UTILITY, fits
-        makeProduct(2, { retail_price: '1.00' }),  // ACTIVITY, fits
-        makeProduct(3, { retail_price: '1.00' }),  // PLAY, fits
-        makeProduct(4, { retail_price: '1.00' }),  // COLLECTIBLE, fits
-        makeProduct(5, { retail_price: '2.00', upgrade_tier: 'STANDARD' }),
+        makeProduct(1, { retail_price: '1.00', form_factor: 'BAR' }),
+        makeProduct(2, { retail_price: '1.00', form_factor: 'FLAT_RECT' }),
+        makeProduct(3, { retail_price: '1.00', form_factor: 'IRREGULAR_VOLUME' }),
+        makeProduct(4, { retail_price: '1.00', form_factor: 'SMALL_VOLUME' }),
+        makeProduct(5, { retail_price: '2.00', upgrade_tier: 'STANDARD', form_factor: 'BAR' }),
       ],
       loadRoleAffinities: async () => [
         { product_id: 1, role: 'UTILITY', weight: 90 },
@@ -303,10 +303,10 @@ describe('generate — NO_BUDGET_FEASIBLE', () => {
   it('throws when even the cheapest products exceed the slot budget', async () => {
     // All products cost $100 each, budget is $1
     const expensiveProducts = [
-      makeProduct(1, { retail_price: '100.00' }),
-      makeProduct(2, { retail_price: '100.00' }),
-      makeProduct(3, { retail_price: '100.00' }),
-      makeProduct(4, { retail_price: '100.00' }),
+      makeProduct(1, { retail_price: '100.00', form_factor: 'BAR' }),
+      makeProduct(2, { retail_price: '100.00', form_factor: 'FLAT_RECT' }),
+      makeProduct(3, { retail_price: '100.00', form_factor: 'IRREGULAR_VOLUME' }),
+      makeProduct(4, { retail_price: '100.00', form_factor: 'SMALL_VOLUME' }),
     ];
 
     const repos = makeRepos({
