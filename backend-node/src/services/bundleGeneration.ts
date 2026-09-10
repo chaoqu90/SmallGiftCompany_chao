@@ -125,6 +125,12 @@ export async function generate(
   }
 
   // ── Step 6b: Slot selection ──────────────────────────────────────────────
+  //
+  // Form factor constraint: each slot position is assigned a required form factor
+  // so the 4 standard items always cover all visual shape positions.
+  // Slot 0 → BAR, Slot 1 → FLAT_RECT, Slot 2 → IRREGULAR_VOLUME, Slot 3 → SMALL_VOLUME
+  const SLOT_FORM_FACTORS = ['BAR', 'FLAT_RECT', 'IRREGULAR_VOLUME', 'SMALL_VOLUME'];
+
   const selectedIds = new Set<number>();
   const slotSelections: Array<{ slot: BundleTemplateSlotWithRoles; product: ProductRow }> = [];
 
@@ -132,15 +138,21 @@ export async function generate(
 
   if (!isConstrained) {
     // PATH 1 — Unconstrained: highest-scoring eligible product per slot
-    for (const slot of slots) {
+    for (let slotIdx = 0; slotIdx < slots.length; slotIdx++) {
+      const slot = slots[slotIdx];
+      const requiredFormFactor = SLOT_FORM_FACTORS[slotIdx];
+
       const candidates = eligible.filter(
-        p => !selectedIds.has(p.id) && hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
+        p =>
+          !selectedIds.has(p.id) &&
+          hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
+          p.form_factor === requiredFormFactor,
       );
 
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           'INSUFFICIENT_ROLE_COVERAGE',
-          `No candidates for slot: ${slot.slot_code}`,
+          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`,
         );
       }
 
@@ -149,7 +161,6 @@ export async function generate(
         const scoreBest = scoreProduct(best, request.interest, request.audiencePreference, slot.allowed_roles, affinityMaps);
         if (scoreP > scoreBest) return p;
         if (scoreP === scoreBest) {
-          // Tiebreak: lower cogAdjusted wins
           return parseFloat(p.cog_adjusted) < parseFloat(best.cog_adjusted) ? p : best;
         }
         return best;
@@ -184,15 +195,17 @@ export async function generate(
 
     for (let slotIdx = 0; slotIdx < slots.length; slotIdx++) {
       const slot = slots[slotIdx];
+      const requiredFormFactor = SLOT_FORM_FACTORS[slotIdx];
       const currentRemaining = remainingBudget;
       const remainingSlots = slots.slice(slotIdx + 1);
 
-      // Preference-filtered candidates within remaining budget
+      // Preference-filtered candidates within remaining budget, matching required form factor
       let candidates = eligible.filter(
         p =>
           !selectedIds.has(p.id) &&
           parseFloat(p.retail_price) <= currentRemaining &&
-          hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
+          hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
+          p.form_factor === requiredFormFactor,
       );
 
       // PATH 3 per-slot fallback: drop preference filters, use STANDARD from audienceCompatiblePool
@@ -203,7 +216,8 @@ export async function generate(
             p.upgrade_tier === 'STANDARD' &&
             !selectedIds.has(p.id) &&
             parseFloat(p.retail_price) <= currentRemaining &&
-            hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
+            hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
+            p.form_factor === requiredFormFactor,
         );
         usedFallback = true;
       }
@@ -211,7 +225,7 @@ export async function generate(
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           'INSUFFICIENT_ROLE_COVERAGE',
-          `No candidates for slot: ${slot.slot_code}`,
+          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`,
         );
       }
 
@@ -230,7 +244,7 @@ export async function generate(
       let chosen: ProductRow | null = null;
       for (const candidate of scored) {
         const costAfter = currentRemaining - parseFloat(candidate.retail_price);
-        if (isFeasible(costAfter, remainingSlots, feasibilityPool, selectedIds, candidate.id, affinityMaps)) {
+        if (isFeasible(costAfter, remainingSlots, slotIdx + 1, SLOT_FORM_FACTORS, feasibilityPool, selectedIds, candidate.id, affinityMaps)) {
           chosen = candidate;
           break;
         }
@@ -239,7 +253,7 @@ export async function generate(
       if (!chosen) {
         throw new BundleGenerationError(
           'NO_BUDGET_FEASIBLE',
-          `Cannot satisfy budget constraint for slot: ${slot.slot_code}`,
+          `Cannot satisfy budget constraint for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`,
         );
       }
 
@@ -362,6 +376,8 @@ function hasAnyRole(
 function isFeasible(
   remainingAfterChoice: number,
   remainingSlots: BundleTemplateSlotWithRoles[],
+  remainingStartIdx: number,
+  slotFormFactors: string[],
   pool: ProductRow[],
   currentSelectedIds: Set<number>,
   candidateId: number,
@@ -369,12 +385,15 @@ function isFeasible(
 ): boolean {
   const projectedSelected = new Set([...currentSelectedIds, candidateId]);
 
-  for (const slot of remainingSlots) {
+  for (let i = 0; i < remainingSlots.length; i++) {
+    const slot = remainingSlots[i];
+    const requiredFormFactor = slotFormFactors[remainingStartIdx + i];
     const anyFit = pool.some(
       p =>
         !projectedSelected.has(p.id) &&
         parseFloat(p.retail_price) <= remainingAfterChoice &&
-        hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
+        hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
+        p.form_factor === requiredFormFactor,
     );
     if (!anyFit) return false;
   }

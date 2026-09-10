@@ -5,26 +5,29 @@ import { Box } from '@mui/material'
 // Uses SVG only (no Three.js/3D library). Shapes represent physical form factor.
 // This visual is supplementary (aria-hidden); item info also appears in text cards.
 
-// ── Shape types (spec §6) ────────────────────────────────────────────────────
+// ── Shape types ──────────────────────────────────────────────────────────────
 
 type ShapeType = 'BAR' | 'FLAT_RECT' | 'CUBE' | 'ROUND' | 'BAG'
 
-// Frontend-only SKU → shape mapping (spec §6: "documented frontend mapping by category/type").
-// No backend field is added; this table is the only coupling point.
-const SHAPE_BY_SKU: Record<string, ShapeType> = {
-  'CRAYON-001':  'BAR',       // crayon → long narrow bar
-  'STICKER-001': 'FLAT_RECT', // sticker sheet → flat rectangle
-  'PUTTY-001':   'ROUND',     // squishy → rounded blob
-}
-const FALLBACK_SHAPES: ShapeType[] = ['BAR', 'FLAT_RECT', 'CUBE', 'ROUND']
+// Each position slot maps to a fixed shape AND the form factor that should fill it.
+// Position 0 → BAR shape        → formFactor BAR
+// Position 1 → FLAT_RECT shape  → formFactor FLAT_RECT
+// Position 2 → CUBE shape       → formFactor IRREGULAR_VOLUME
+// Position 3 → ROUND shape      → formFactor SMALL_VOLUME
+const SLOTS: { shape: ShapeType; formFactor: string }[] = [
+  { shape: 'BAR',       formFactor: 'BAR' },
+  { shape: 'FLAT_RECT', formFactor: 'FLAT_RECT' },
+  { shape: 'CUBE',      formFactor: 'IRREGULAR_VOLUME' },
+  { shape: 'ROUND',     formFactor: 'SMALL_VOLUME' },
+]
 
 // Neutral editorial fills (spec §7 — soft neutrals, no rainbow coding)
 const FILL: Record<ShapeType, string> = {
-  BAR:       '#C8B8A0',   // warm tan — crayon/pencil
-  FLAT_RECT: '#B4CDB8',   // soft sage — sticker
-  CUBE:      '#B8CCDB',   // dusty blue — toy block
-  ROUND:     '#C4B8D0',   // soft lavender — squishy/putty
-  BAG:       '#E8D4C0',   // warm peach — gift bag
+  BAR:       '#C8B8A0',   // warm tan
+  FLAT_RECT: '#B4CDB8',   // soft sage
+  CUBE:      '#B8CCDB',   // dusty blue
+  ROUND:     '#C4B8D0',   // soft lavender
+  BAG:       '#E8D4C0',   // warm peach
 }
 
 // Positions within 400×320 viewBox (matches spec §6 ASCII layout)
@@ -59,7 +62,6 @@ function Shape({ type, x, y, highlighted, dimmed, reducedMotion, onClick }: Shap
     opacity,
     transition,
     transform: highlighted ? 'scale(1.05)' : undefined,
-    // transformBox + transformOrigin make CSS transform work correctly on SVG elements
     transformBox:    'fill-box',
     transformOrigin: 'center',
     cursor: onClick ? 'pointer' : 'default',
@@ -75,23 +77,18 @@ function Shape({ type, x, y, highlighted, dimmed, reducedMotion, onClick }: Shap
   }
 
   if (type === 'BAR') {
-    // Long rounded capsule — crayon/pencil (spec §6: "long rounded rectangle / capsule")
     return <rect {...sharedProps} x={x - 10} y={y - 44} width={20} height={88} rx={10} />
   }
   if (type === 'FLAT_RECT') {
-    // Wide flat sheet — sticker/card (spec §6: "thin sheet / small rectangle")
     return <rect {...sharedProps} x={x - 40} y={y - 28} width={80} height={56} rx={7} />
   }
   if (type === 'CUBE') {
-    // Square block — toy (spec §6: "rounded 3D-ish blob / cube")
     return <rect {...sharedProps} x={x - 32} y={y - 32} width={64} height={64} rx={9} />
   }
   if (type === 'ROUND') {
-    // Rounded blob — squishy/putty (spec §6: "sphere-like shape")
     return <ellipse {...sharedProps} cx={x} cy={y} rx={38} ry={32} />
   }
   if (type === 'BAG') {
-    // Gift bag — larger container with handle (spec §6: "outlined bag/container shape")
     return (
       <g style={{ opacity: 0.88 }}>
         <rect fill={fill} x={x - 30} y={y - 26} width={60} height={56} rx={8} />
@@ -110,7 +107,10 @@ function Shape({ type, x, y, highlighted, dimmed, reducedMotion, onClick }: Shap
 
 // ── ConfiguratorVisual ───────────────────────────────────────────────────────
 
-interface VisualItem { sku: string }
+interface VisualItem {
+  sku: string
+  formFactor: string
+}
 
 interface Props {
   items: VisualItem[]
@@ -128,7 +128,6 @@ export function ConfiguratorVisual({ items, highlightedSku, onShapeClick }: Prop
 
   return (
     <Box
-      // Spec §18: visual is supplementary — never the sole source of item info
       aria-hidden="true"
       sx={{
         backgroundColor: '#F0EDE8',
@@ -154,20 +153,22 @@ export function ConfiguratorVisual({ items, highlightedSku, onShapeClick }: Prop
         </defs>
 
         <g filter="url(#cfg-drop-shadow)">
-          {items.slice(0, 4).map((item, idx) => {
-            const shape = SHAPE_BY_SKU[item.sku] ?? FALLBACK_SHAPES[idx % FALLBACK_SHAPES.length]
+          {SLOTS.map((slot, idx) => {
             const pos = ITEM_POS[idx]
             if (!pos) return null
+            // Find the item whose formFactor matches this slot
+            const item = items.find(i => i.formFactor === slot.formFactor)
+            const sku = item?.sku ?? null
             return (
               <Shape
-                key={item.sku}
-                type={shape}
+                key={slot.formFactor}
+                type={slot.shape}
                 x={pos.x}
                 y={pos.y}
-                highlighted={highlightedSku === item.sku}
-                dimmed={anyHighlighted && highlightedSku !== item.sku}
+                highlighted={sku !== null && highlightedSku === sku}
+                dimmed={anyHighlighted && highlightedSku !== sku}
                 reducedMotion={reducedMotion}
-                onClick={() => onShapeClick(item.sku)}
+                onClick={sku ? () => onShapeClick(sku) : undefined}
               />
             )
           })}

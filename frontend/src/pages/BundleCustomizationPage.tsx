@@ -230,7 +230,7 @@ export function BundleCustomizationPage() {
             sx={{ position: { md: 'sticky' }, top: { md: 72 } }}
           >
             <ConfiguratorVisual
-              items={displayedItems.map((item) => ({ sku: item.sku }))}
+              items={displayedItems.map((item) => ({ sku: item.sku, formFactor: item.formFactor }))}
               highlightedSku={highlightedSku}
               onShapeClick={(sku) => setHighlightedSku((prev) => prev === sku ? null : sku)}
             />
