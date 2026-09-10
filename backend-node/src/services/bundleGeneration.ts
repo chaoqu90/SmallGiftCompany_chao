@@ -142,17 +142,25 @@ export async function generate(
       const slot = slots[slotIdx];
       const requiredFormFactor = SLOT_FORM_FACTORS[slotIdx];
 
-      const candidates = eligible.filter(
+      // Preferred: correct form factor AND matching role
+      let candidates = eligible.filter(
         p =>
           !selectedIds.has(p.id) &&
-          hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
-          p.form_factor === requiredFormFactor,
+          p.form_factor === requiredFormFactor &&
+          hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
       );
+
+      // Soft fallback: correct form factor only (role not required)
+      if (candidates.length === 0) {
+        candidates = eligible.filter(
+          p => !selectedIds.has(p.id) && p.form_factor === requiredFormFactor,
+        );
+      }
 
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           'INSUFFICIENT_ROLE_COVERAGE',
-          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`,
+          `No eligible product with form factor ${requiredFormFactor} for slot: ${slot.slot_code}`,
         );
       }
 
@@ -199,16 +207,26 @@ export async function generate(
       const currentRemaining = remainingBudget;
       const remainingSlots = slots.slice(slotIdx + 1);
 
-      // Preference-filtered candidates within remaining budget, matching required form factor
+      // Preferred: correct form factor AND role, within budget
       let candidates = eligible.filter(
         p =>
           !selectedIds.has(p.id) &&
           parseFloat(p.retail_price) <= currentRemaining &&
-          hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
-          p.form_factor === requiredFormFactor,
+          p.form_factor === requiredFormFactor &&
+          hasAnyRole(p.id, slot.allowed_roles, affinityMaps),
       );
 
-      // PATH 3 per-slot fallback: drop preference filters, use STANDARD from audienceCompatiblePool
+      // Soft role fallback: correct form factor only, within budget
+      if (candidates.length === 0) {
+        candidates = eligible.filter(
+          p =>
+            !selectedIds.has(p.id) &&
+            parseFloat(p.retail_price) <= currentRemaining &&
+            p.form_factor === requiredFormFactor,
+        );
+      }
+
+      // PATH 3 audience fallback: drop preference filters, use STANDARD from audienceCompatiblePool
       let usedFallback = false;
       if (candidates.length === 0) {
         candidates = audienceCompatiblePool.filter(
@@ -216,7 +234,6 @@ export async function generate(
             p.upgrade_tier === 'STANDARD' &&
             !selectedIds.has(p.id) &&
             parseFloat(p.retail_price) <= currentRemaining &&
-            hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
             p.form_factor === requiredFormFactor,
         );
         usedFallback = true;
@@ -225,7 +242,7 @@ export async function generate(
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           'INSUFFICIENT_ROLE_COVERAGE',
-          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`,
+          `No eligible product with form factor ${requiredFormFactor} for slot: ${slot.slot_code}`,
         );
       }
 
@@ -244,7 +261,7 @@ export async function generate(
       let chosen: ProductRow | null = null;
       for (const candidate of scored) {
         const costAfter = currentRemaining - parseFloat(candidate.retail_price);
-        if (isFeasible(costAfter, remainingSlots, slotIdx + 1, SLOT_FORM_FACTORS, feasibilityPool, selectedIds, candidate.id, affinityMaps)) {
+        if (isFeasible(costAfter, remainingSlots, slotIdx + 1, SLOT_FORM_FACTORS, feasibilityPool, selectedIds, candidate.id)) {
           chosen = candidate;
           break;
         }
@@ -373,6 +390,9 @@ function hasAnyRole(
   return allowedRoles.some(role => affinityMaps.role.has(`${productId}:${role}`));
 }
 
+// Feasibility check: form factor is the only hard constraint.
+// Roles are soft, so we only verify that at least one product with the
+// required form factor fits within the remaining budget for each future slot.
 function isFeasible(
   remainingAfterChoice: number,
   remainingSlots: BundleTemplateSlotWithRoles[],
@@ -381,18 +401,15 @@ function isFeasible(
   pool: ProductRow[],
   currentSelectedIds: Set<number>,
   candidateId: number,
-  affinityMaps: AffinityMaps,
 ): boolean {
   const projectedSelected = new Set([...currentSelectedIds, candidateId]);
 
   for (let i = 0; i < remainingSlots.length; i++) {
-    const slot = remainingSlots[i];
     const requiredFormFactor = slotFormFactors[remainingStartIdx + i];
     const anyFit = pool.some(
       p =>
         !projectedSelected.has(p.id) &&
         parseFloat(p.retail_price) <= remainingAfterChoice &&
-        hasAnyRole(p.id, slot.allowed_roles, affinityMaps) &&
         p.form_factor === requiredFormFactor,
     );
     if (!anyFit) return false;

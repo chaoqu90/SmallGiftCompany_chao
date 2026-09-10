@@ -288,10 +288,25 @@ describe('generate — NO_ELIGIBLE_PRODUCTS', () => {
 });
 
 describe('generate — INSUFFICIENT_ROLE_COVERAGE', () => {
-  it('throws when no product matches the role for a required slot', async () => {
-    // Products with NO role affinities — can't fill any slot
+  it('still generates a bundle when roles are empty (form factor is the only hard filter)', async () => {
+    // Products with NO role affinities — roles are soft, so bundle still generates
+    // using form factor alone as the hard constraint.
     const repos = makeRepos({
       loadRoleAffinities: async () => [],
+    });
+    const { response } = await generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos);
+    expect(response.items).toHaveLength(4);
+  });
+
+  it('throws when no product with the required form factor exists', async () => {
+    // All products have ROUND form factor — no BAR/FLAT_RECT/IRREGULAR_VOLUME available
+    const repos = makeRepos({
+      findAllEligibleForGeneration: async () => [
+        makeProduct(1, { form_factor: 'ROUND' }),
+        makeProduct(2, { form_factor: 'ROUND' }),
+        makeProduct(3, { form_factor: 'ROUND' }),
+        makeProduct(4, { form_factor: 'ROUND' }),
+      ],
     });
     await expect(generate({ ...BASE_REQUEST, maxRetailPrice: null }, repos)).rejects.toMatchObject({
       failureCode: 'INSUFFICIENT_ROLE_COVERAGE',

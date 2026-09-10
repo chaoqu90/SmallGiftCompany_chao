@@ -73079,13 +73079,18 @@ async function generate(request, repos, userId) {
     for (let slotIdx = 0; slotIdx < slots.length; slotIdx++) {
       const slot = slots[slotIdx];
       const requiredFormFactor = SLOT_FORM_FACTORS[slotIdx];
-      const candidates = eligible.filter(
-        (p3) => !selectedIds.has(p3.id) && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps) && p3.form_factor === requiredFormFactor
+      let candidates = eligible.filter(
+        (p3) => !selectedIds.has(p3.id) && p3.form_factor === requiredFormFactor && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps)
       );
+      if (candidates.length === 0) {
+        candidates = eligible.filter(
+          (p3) => !selectedIds.has(p3.id) && p3.form_factor === requiredFormFactor
+        );
+      }
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           "INSUFFICIENT_ROLE_COVERAGE",
-          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`
+          `No eligible product with form factor ${requiredFormFactor} for slot: ${slot.slot_code}`
         );
       }
       const chosen = candidates.reduce((best, p3) => {
@@ -73122,19 +73127,24 @@ async function generate(request, repos, userId) {
       const currentRemaining = remainingBudget;
       const remainingSlots = slots.slice(slotIdx + 1);
       let candidates = eligible.filter(
-        (p3) => !selectedIds.has(p3.id) && parseFloat(p3.retail_price) <= currentRemaining && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps) && p3.form_factor === requiredFormFactor
+        (p3) => !selectedIds.has(p3.id) && parseFloat(p3.retail_price) <= currentRemaining && p3.form_factor === requiredFormFactor && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps)
       );
+      if (candidates.length === 0) {
+        candidates = eligible.filter(
+          (p3) => !selectedIds.has(p3.id) && parseFloat(p3.retail_price) <= currentRemaining && p3.form_factor === requiredFormFactor
+        );
+      }
       let usedFallback = false;
       if (candidates.length === 0) {
         candidates = audienceCompatiblePool.filter(
-          (p3) => p3.upgrade_tier === "STANDARD" && !selectedIds.has(p3.id) && parseFloat(p3.retail_price) <= currentRemaining && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps) && p3.form_factor === requiredFormFactor
+          (p3) => p3.upgrade_tier === "STANDARD" && !selectedIds.has(p3.id) && parseFloat(p3.retail_price) <= currentRemaining && p3.form_factor === requiredFormFactor
         );
         usedFallback = true;
       }
       if (candidates.length === 0) {
         throw new BundleGenerationError(
           "INSUFFICIENT_ROLE_COVERAGE",
-          `No candidates for slot: ${slot.slot_code} (form factor: ${requiredFormFactor})`
+          `No eligible product with form factor ${requiredFormFactor} for slot: ${slot.slot_code}`
         );
       }
       const scored = [...candidates].sort((a5, b6) => {
@@ -73146,7 +73156,7 @@ async function generate(request, repos, userId) {
       let chosen = null;
       for (const candidate of scored) {
         const costAfter = currentRemaining - parseFloat(candidate.retail_price);
-        if (isFeasible(costAfter, remainingSlots, slotIdx + 1, SLOT_FORM_FACTORS, feasibilityPool, selectedIds, candidate.id, affinityMaps)) {
+        if (isFeasible(costAfter, remainingSlots, slotIdx + 1, SLOT_FORM_FACTORS, feasibilityPool, selectedIds, candidate.id)) {
           chosen = candidate;
           break;
         }
@@ -73248,13 +73258,12 @@ async function generate(request, repos, userId) {
 function hasAnyRole(productId, allowedRoles, affinityMaps) {
   return allowedRoles.some((role) => affinityMaps.role.has(`${productId}:${role}`));
 }
-function isFeasible(remainingAfterChoice, remainingSlots, remainingStartIdx, slotFormFactors, pool, currentSelectedIds, candidateId, affinityMaps) {
+function isFeasible(remainingAfterChoice, remainingSlots, remainingStartIdx, slotFormFactors, pool, currentSelectedIds, candidateId) {
   const projectedSelected = /* @__PURE__ */ new Set([...currentSelectedIds, candidateId]);
   for (let i5 = 0; i5 < remainingSlots.length; i5++) {
-    const slot = remainingSlots[i5];
     const requiredFormFactor = slotFormFactors[remainingStartIdx + i5];
     const anyFit = pool.some(
-      (p3) => !projectedSelected.has(p3.id) && parseFloat(p3.retail_price) <= remainingAfterChoice && hasAnyRole(p3.id, slot.allowed_roles, affinityMaps) && p3.form_factor === requiredFormFactor
+      (p3) => !projectedSelected.has(p3.id) && parseFloat(p3.retail_price) <= remainingAfterChoice && p3.form_factor === requiredFormFactor
     );
     if (!anyFit) return false;
   }
