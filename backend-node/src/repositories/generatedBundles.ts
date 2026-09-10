@@ -27,6 +27,7 @@ export interface BundleItemSnapshot {
   formFactorSnapshot: string;
   quantityPerBag: number;
   displayOrder: number;
+  imageUrl: string | null;
 }
 
 export interface BundleUpgradeSnapshot {
@@ -35,11 +36,13 @@ export interface BundleUpgradeSnapshot {
   standardSkuSnapshot: string | null;
   standardCostSnapshot: number | null;
   standardRetailAdjustmentSnapshot: number | null;
+  standardImageUrl: string | null;
   premiumProductId: number | null;
   premiumProductNameSnapshot: string | null;
   premiumSkuSnapshot: string | null;
   premiumCostSnapshot: number | null;
   premiumRetailAdjustmentSnapshot: number | null;
+  premiumImageUrl: string | null;
 }
 
 export interface BundleGiftBagSnapshot {

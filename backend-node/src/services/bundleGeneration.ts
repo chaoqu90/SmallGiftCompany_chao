@@ -297,11 +297,13 @@ export async function generate(
       standardSkuSnapshot: std?.sku ?? null,
       standardCostSnapshot: std ? parseFloat(std.cost) : null,
       standardRetailAdjustmentSnapshot: stdRetailPrice,
+      standardImageUrl: std?.image_url ?? null,
       premiumProductId: prem?.id ?? null,
       premiumProductNameSnapshot: prem?.name ?? null,
       premiumSkuSnapshot: prem?.sku ?? null,
       premiumCostSnapshot: prem ? parseFloat(prem.cost) : null,
       premiumRetailAdjustmentSnapshot: premRetailAdj,
+      premiumImageUrl: prem?.image_url ?? null,
     };
   }
 
@@ -326,6 +328,7 @@ export async function generate(
       formFactorSnapshot: s.product.form_factor,
       quantityPerBag: 1,
       displayOrder: s.slot.display_order,
+      imageUrl: s.product.image_url ?? null,
     })),
     upgrade: upgradeSnapshot,
     giftBag: {
@@ -397,15 +400,18 @@ export function buildResponse(
       formFactor: item.formFactorSnapshot,
       quantityPerBag: item.quantityPerBag,
       displayOrder: item.displayOrder,
+      imageUrl: item.imageUrl ?? null,
     })),
     upgrade: snapshot.upgrade
       ? {
           standardProductName: snapshot.upgrade.standardProductNameSnapshot,
           standardSku: snapshot.upgrade.standardSkuSnapshot,
           standardRetailAdjustment: snapshot.upgrade.standardRetailAdjustmentSnapshot,
+          standardImageUrl: snapshot.upgrade.standardImageUrl ?? null,
           upgradedProductName: snapshot.upgrade.premiumProductNameSnapshot,
           upgradedSku: snapshot.upgrade.premiumSkuSnapshot,
           upgradedRetailAdjustment: snapshot.upgrade.premiumRetailAdjustmentSnapshot,
+          upgradedImageUrl: snapshot.upgrade.premiumImageUrl ?? null,
         }
       : null,
     giftBag: snapshot.giftBag
