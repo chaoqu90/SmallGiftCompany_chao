@@ -27,17 +27,19 @@ const GENERATED_BUNDLE_RESPONSE: GeneratedBundleResponse = {
   standardItemCogsSnapshot: 9.50,
   bundleRetailPrice: 36.00,
   items: [
-    { slotCode: 'UTILITY',  productName: 'Mini Crayon Set',      sku: 'CRAYON-001',  description: '8-colour mini crayon set',       formFactor: 'LINEAR', quantityPerBag: 1, displayOrder: 1 },
-    { slotCode: 'ACTIVITY', productName: 'Unicorn Sticker Pack', sku: 'STICKER-001', description: 'Pack of 12 unicorn stickers',     formFactor: 'FLAT',   quantityPerBag: 1, displayOrder: 2 },
-    { slotCode: 'PLAY',     productName: 'Rainbow Silly Putty',  sku: 'PUTTY-001',   description: 'Stretchy rainbow-coloured putty', formFactor: 'ROUND',  quantityPerBag: 1, displayOrder: 3 },
+    { slotCode: 'UTILITY',  productName: 'Mini Crayon Set',      sku: 'CRAYON-001',  description: '8-colour mini crayon set',       formFactor: 'LINEAR', quantityPerBag: 1, displayOrder: 1, imageUrl: null },
+    { slotCode: 'ACTIVITY', productName: 'Unicorn Sticker Pack', sku: 'STICKER-001', description: 'Pack of 12 unicorn stickers',     formFactor: 'FLAT',   quantityPerBag: 1, displayOrder: 2, imageUrl: null },
+    { slotCode: 'PLAY',     productName: 'Rainbow Silly Putty',  sku: 'PUTTY-001',   description: 'Stretchy rainbow-coloured putty', formFactor: 'ROUND',  quantityPerBag: 1, displayOrder: 3, imageUrl: null },
   ],
   upgrade: {
     standardProductName: 'Rainbow Silly Putty',
     standardSku: 'PUTTY-001',
     standardRetailAdjustment: null,
+    standardImageUrl: null,
     upgradedProductName: 'Premium Art Set',
     upgradedSku: 'ART-PREMIUM-001',
     upgradedRetailAdjustment: 9.00,
+    upgradedImageUrl: null,
   },
   giftBag: {
     code: 'CLASSIC_BAG',
