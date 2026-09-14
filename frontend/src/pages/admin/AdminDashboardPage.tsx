@@ -26,7 +26,7 @@ export function AdminDashboardPage() {
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F7F7F5' }}>
       <AdminNav />
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: { xs: 2, md: 3 } }}>
         <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>Dashboard</Typography>
 
         {loading && (

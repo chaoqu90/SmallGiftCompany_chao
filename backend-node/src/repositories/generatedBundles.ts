@@ -13,6 +13,7 @@ import type {
   GeneratedBundleItemRow,
   GeneratedBundleUpgradeRow,
   GeneratedBundleGiftBagRow,
+  ProductRow,
 } from '../types/entities.js';
 
 // ─── Snapshot types passed into saveBundle ────────────────────────────────────
@@ -252,6 +253,61 @@ export async function findBundleByPublicId(
         }
       : null,
   };
+}
+
+/**
+ * Updates a single generated_bundle_item row with new product snapshot values.
+ * Used by the admin swap-item endpoint (AC-FP-C.6).
+ * Requirements: AC-FP-C.6
+ * Design: specs/future-party/design.md §3.2
+ */
+export async function patchBundleItem(
+  bundlePublicId: string,
+  slotCode: string,
+  product: ProductRow,
+): Promise<void> {
+  await sql.begin(async tx => {
+    // 1. Update the swapped item's snapshot columns
+    await tx`
+      UPDATE generated_bundle_item
+      SET
+        product_id            = ${product.id},
+        product_name_snapshot = ${product.name},
+        sku_snapshot          = ${product.sku},
+        cost_snapshot         = ${product.cost},
+        description_snapshot  = ${product.description},
+        form_factor_snapshot  = ${product.form_factor}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+        AND slot_code = ${slotCode}
+    `;
+
+    // 2. Recalculate base_retail_price and promote status:
+    //    - If status is GENERATED and the bundle is linked to a future party → ASSIGNED
+    //    - If status is GENERATED and no future party link → stays GENERATED
+    //    - ORDERED status is never downgraded here
+    await tx`
+      UPDATE generated_bundle gb
+      SET
+        base_retail_price = (
+          SELECT COALESCE(SUM(p.retail_price * gbi.quantity_per_bag), 0)
+          FROM generated_bundle_item gbi
+          JOIN product p ON p.id = gbi.product_id
+          WHERE gbi.generated_bundle_id = gb.id
+        ),
+        status = CASE
+          WHEN gb.status = 'GENERATED'
+               AND EXISTS (
+                 SELECT 1 FROM future_parties fp
+                 WHERE fp.linked_bundle_public_id = gb.public_id
+               )
+          THEN 'ASSIGNED'
+          ELSE gb.status
+        END
+      WHERE gb.public_id = ${bundlePublicId}
+    `;
+  });
 }
 
 /**

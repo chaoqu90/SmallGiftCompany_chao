@@ -22727,7 +22727,7 @@ var require_application = __commonJS({
   "node_modules/express/lib/application.js"(exports, module) {
     "use strict";
     var finalhandler = require_finalhandler();
-    var Router16 = require_router();
+    var Router17 = require_router();
     var methods = require_methods();
     var middleware = require_init();
     var query = require_query();
@@ -22792,7 +22792,7 @@ var require_application = __commonJS({
     };
     app2.lazyrouter = function lazyrouter() {
       if (!this._router) {
-        this._router = new Router16({
+        this._router = new Router17({
           caseSensitive: this.enabled("case sensitive routing"),
           strict: this.enabled("strict routing")
         });
@@ -24656,7 +24656,7 @@ var require_express = __commonJS({
     var mixin = require_merge_descriptors();
     var proto = require_application();
     var Route = require_route();
-    var Router16 = require_router();
+    var Router17 = require_router();
     var req = require_request2();
     var res = require_response2();
     exports = module.exports = createApplication;
@@ -24679,7 +24679,7 @@ var require_express = __commonJS({
     exports.request = req;
     exports.response = res;
     exports.Route = Route;
-    exports.Router = Router16;
+    exports.Router = Router17;
     exports.json = bodyParser.json;
     exports.query = require_query();
     exports.raw = bodyParser.raw;
@@ -67670,7 +67670,7 @@ var require_dist_cjs18 = __commonJS({
 var import_serverless_http = __toESM(require_serverless_http(), 1);
 
 // src/app.ts
-var import_express16 = __toESM(require_express2(), 1);
+var import_express17 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/middleware/cors.ts
@@ -72863,6 +72863,9 @@ var FuturePartyRequestSchema = external_exports.object({
 var LinkBundleRequestSchema = external_exports.object({
   bundlePublicId: external_exports.string().min(1).max(30)
 });
+var PatchBundleItemRequestSchema = external_exports.object({
+  productId: external_exports.coerce.number().int().positive()
+});
 
 // src/services/bundleGeneration.ts
 import { randomBytes } from "crypto";
@@ -72894,21 +72897,19 @@ function isAudienceCompatible(product, audience, affinityMaps) {
   const hasFeminine = affinityMaps.audience.has(`${productId}:FEMININE`);
   const hasMasculine = affinityMaps.audience.has(`${productId}:MASCULINE`);
   const hasUniversal = affinityMaps.audience.has(`${productId}:UNIVERSAL`);
-  const hasNoAffinity = !hasFeminine && !hasMasculine && !hasUniversal;
-  if (audience === "FEMININE") {
-    if (hasMasculine && !hasFeminine && !hasUniversal) return false;
-    return true;
-  }
   if (audience === "MASCULINE") {
-    if (hasFeminine && !hasMasculine && !hasUniversal) return false;
-    return true;
+    if (hasFeminine) return false;
+    return hasMasculine || hasUniversal || !hasFeminine && !hasMasculine && !hasUniversal;
+  }
+  if (audience === "FEMININE") {
+    if (hasMasculine) return false;
+    return hasFeminine || hasUniversal || !hasFeminine && !hasMasculine && !hasUniversal;
   }
   if (audience === "NO_PREFERENCE") {
-    if (hasFeminine && !hasUniversal) return false;
-    if (hasMasculine && !hasUniversal) return false;
+    if (hasFeminine || hasMasculine) return false;
     return true;
   }
-  return hasNoAffinity || hasUniversal;
+  return !hasFeminine && !hasMasculine;
 }
 function filterEligibleProducts(products, age, partyType, audience, affinityMaps) {
   return products.filter(
@@ -75571,6 +75572,44 @@ async function findBundleByPublicId(publicId) {
     } : null
   };
 }
+async function patchBundleItem(bundlePublicId, slotCode, product) {
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE generated_bundle_item
+      SET
+        product_id            = ${product.id},
+        product_name_snapshot = ${product.name},
+        sku_snapshot          = ${product.sku},
+        cost_snapshot         = ${product.cost},
+        description_snapshot  = ${product.description},
+        form_factor_snapshot  = ${product.form_factor}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+        AND slot_code = ${slotCode}
+    `;
+    await tx`
+      UPDATE generated_bundle gb
+      SET
+        base_retail_price = (
+          SELECT COALESCE(SUM(p.retail_price * gbi.quantity_per_bag), 0)
+          FROM generated_bundle_item gbi
+          JOIN product p ON p.id = gbi.product_id
+          WHERE gbi.generated_bundle_id = gb.id
+        ),
+        status = CASE
+          WHEN gb.status = 'GENERATED'
+               AND EXISTS (
+                 SELECT 1 FROM future_parties fp
+                 WHERE fp.linked_bundle_public_id = gb.public_id
+               )
+          THEN 'ASSIGNED'
+          ELSE gb.status
+        END
+      WHERE gb.public_id = ${bundlePublicId}
+    `;
+  });
+}
 async function listRecentBundles(limit = 200) {
   return sql`
     SELECT gb.*,
@@ -75765,6 +75804,25 @@ async function deleteProduct(id) {
   if (referenced) return false;
   await sql`DELETE FROM product WHERE id = ${id}`;
   return true;
+}
+async function findEligibleAlternativesForSlot(formFactor, excludeProductIds) {
+  if (excludeProductIds.length === 0) {
+    return sql`
+      SELECT * FROM product
+      WHERE form_factor = ${formFactor}
+        AND active = true
+        AND inventory_quantity > 0
+      ORDER BY name ASC
+    `;
+  }
+  return sql`
+    SELECT * FROM product
+    WHERE form_factor = ${formFactor}
+      AND active = true
+      AND inventory_quantity > 0
+      AND id NOT IN ${sql(excludeProductIds)}
+    ORDER BY name ASC
+  `;
 }
 async function findAllEligibleForGeneration(age, partyType) {
   return sql`
@@ -76609,7 +76667,33 @@ adminBundlesRouter.get(
   async (_req, res, next) => {
     try {
       const bundles = await listRecentBundles(200);
-      res.json(bundles);
+      res.json(bundles.map((b6) => ({
+        id: b6.id,
+        publicId: b6.public_id,
+        requestedAge: b6.requested_age,
+        audiencePreference: b6.audience_preference,
+        interest: b6.interest,
+        partyType: b6.party_type,
+        templateCode: b6.template_code,
+        baseRetailPrice: b6.base_retail_price != null ? parseFloat(b6.base_retail_price) : null,
+        status: b6.status,
+        createdAt: b6.created_at
+      })));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminBundlesRouter.delete(
+  "/generated",
+  async (_req, res, next) => {
+    try {
+      const rows = await sql`
+        DELETE FROM generated_bundle
+        WHERE status = 'GENERATED'
+        RETURNING id
+      `;
+      res.json({ deleted: rows.length });
     } catch (err) {
       next(err);
     }
@@ -76619,18 +76703,48 @@ adminBundlesRouter.get(
   "/:publicId",
   async (req, res, next) => {
     try {
-      const bundle = await getByPublicId(req.params.publicId);
+      const { publicId } = req.params;
+      const bundle = await getByPublicId(publicId);
       if (!bundle) {
         res.status(404).json({
           type: "about:bundle-not-found",
           title: "Bundle Not Found",
           status: 404,
-          detail: `No bundle found with id: ${req.params.publicId}`,
+          detail: `No bundle found with id: ${publicId}`,
           instance: req.path
         });
         return;
       }
-      res.json(bundle);
+      const futurePartyRows = await sql`
+        SELECT id, email, party_date, kid_gender, kid_age, submitted_at
+        FROM future_parties
+        WHERE linked_bundle_public_id = ${publicId}
+        ORDER BY submitted_at DESC
+      `;
+      const futureParties = futurePartyRows.map((r5) => ({
+        id: r5.id,
+        email: r5.email,
+        partyDate: r5.party_date,
+        kidGender: r5.kid_gender,
+        kidAge: r5.kid_age,
+        submittedAt: r5.submitted_at
+      }));
+      const orderRows = await sql`
+        SELECT DISTINCT co.public_id, co.customer_email, co.status, co.total, co.created_at
+        FROM customer_order co
+        JOIN order_line_item oli ON oli.customer_order_id = co.id
+        JOIN generated_bundle gb ON gb.id = oli.generated_bundle_id
+        WHERE gb.public_id = ${publicId}
+        ORDER BY co.created_at DESC
+      `;
+      const orders = orderRows.map((r5) => ({
+        publicId: r5.public_id,
+        customerEmail: r5.customer_email,
+        status: r5.status,
+        total: r5.total,
+        createdAt: r5.created_at
+      }));
+      res.json({ ...bundle, futureParties, orders });
     } catch (err) {
       next(err);
     }
@@ -77477,7 +77591,7 @@ ${itemSummary}`,
 }
 
 // src/repositories/orders.ts
-async function createOrder(sessionId, email, name, userId) {
+async function createOrder(sessionId, email, name, userId, options) {
   return sql.begin(async (tx) => {
     const cartItems = await tx`
       SELECT id, generated_bundle_id, upgrade_tier, gift_bag_option_id, quantity
@@ -77541,21 +77655,33 @@ async function createOrder(sessionId, email, name, userId) {
       lineItemInputs.reduce((s2, li) => s2 + li.line_total, 0) * 100
     ) / 100;
     const publicId = `ord_${randomBytes2(6).toString("hex")}`;
+    const orderStatus = options?.status ?? "PENDING";
+    const shippingStreet = options?.shippingStreet ?? null;
+    const shippingCity = options?.shippingCity ?? null;
+    const shippingState = options?.shippingState ?? null;
+    const shippingZip = options?.shippingZip ?? null;
+    const shippingCountry = options?.shippingCountry ?? null;
     const orderRows = await tx`
       INSERT INTO customer_order (
         public_id, session_id, user_id, status,
         subtotal, total, currency,
-        customer_email, customer_name
+        customer_email, customer_name,
+        shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country
       ) VALUES (
         ${publicId},
         ${sessionId},
         ${userId},
-        'PENDING',
+        ${orderStatus},
         ${subtotal},
         ${subtotal},
         'USD',
         ${email},
-        ${name}
+        ${name},
+        ${shippingStreet},
+        ${shippingCity},
+        ${shippingState},
+        ${shippingZip},
+        ${shippingCountry}
       )
       RETURNING *
     `;
@@ -77572,6 +77698,11 @@ async function createOrder(sessionId, email, name, userId) {
       gift_bag_price_snapshot: li.gift_bag_price_snapshot
     }));
     await tx`INSERT INTO order_line_item ${tx(lineItemRows)}`;
+    await tx`
+      UPDATE generated_bundle
+      SET status = 'ORDERED'
+      WHERE id IN ${tx(bundleIds)}
+    `;
     await tx`DELETE FROM cart_item WHERE session_id = ${sessionId}`;
     const lineItemsRaw = await tx`
       SELECT
@@ -77704,6 +77835,15 @@ async function updateOrderStatus(publicId, status) {
   `;
   return rows[0] ?? null;
 }
+async function updateOrderNotes(publicId, notes) {
+  const rows = await sql`
+    UPDATE customer_order
+    SET notes = ${notes}, updated_at = now()
+    WHERE public_id = ${publicId}
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
 async function confirmOrder(params) {
   const {
     paymentIntentId,
@@ -77818,6 +77958,11 @@ async function confirmOrder(params) {
       gift_bag_price_snapshot: li.gift_bag_price_snapshot
     }));
     await tx`INSERT INTO order_line_item ${tx(lineItemRows)}`;
+    await tx`
+      UPDATE generated_bundle
+      SET status = 'ORDERED'
+      WHERE id IN ${tx(bundleIds)}
+    `;
     await tx`DELETE FROM cart_item WHERE session_id = ${sessionId}`;
     const lineItemsRaw = await tx`
       SELECT oli.*, gb.interest, gb.requested_age, gb.party_type, gb.public_id AS bundle_public_id
@@ -77900,9 +78045,22 @@ function toOrderDto(order) {
     }))
   };
 }
+var CartItemInputSchema = external_exports.object({
+  bundlePublicId: external_exports.string().min(1),
+  upgradeTier: external_exports.enum(["STANDARD", "PREMIUM"]).default("STANDARD"),
+  giftBagOptionId: external_exports.number().int().positive().nullable().optional(),
+  quantity: external_exports.number().int().min(1).default(1)
+});
 var CreateOrderSchema = external_exports.object({
   email: external_exports.string().email(),
-  name: external_exports.string().optional()
+  name: external_exports.string().optional(),
+  submit: external_exports.boolean().optional().default(false),
+  shippingStreet: external_exports.string().min(1).optional(),
+  shippingCity: external_exports.string().min(1).optional(),
+  shippingState: external_exports.string().min(1).optional(),
+  shippingZip: external_exports.string().min(1).optional(),
+  shippingCountry: external_exports.string().length(2).optional(),
+  items: external_exports.array(CartItemInputSchema).min(1).optional()
 });
 userOrdersRouter.post(
   "/",
@@ -77930,7 +78088,25 @@ userOrdersRouter.post(
         });
         return;
       }
-      const { email, name } = parsed.data;
+      const { email, name, submit, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
+      const sid = sessionId.trim();
+      if (items && items.length > 0) {
+        await clearCart(sid);
+        for (const item of items) {
+          const bundleDbId = await findBundleIdByPublicId(item.bundlePublicId);
+          if (!bundleDbId) {
+            res.status(422).json({
+              type: "about:validation-error",
+              title: "Bundle not found",
+              status: 422,
+              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+              instance: req.path
+            });
+            return;
+          }
+          await upsertCartItemExact(sid, bundleDbId, item.upgradeTier, item.giftBagOptionId ?? null, item.quantity);
+        }
+      }
       let userId = null;
       const authHeader = req.headers.authorization;
       if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -77941,7 +78117,14 @@ userOrdersRouter.post(
         } catch {
         }
       }
-      const order = await createOrder(sessionId.trim(), email, name ?? null, userId);
+      const order = await createOrder(sid, email, name ?? null, userId, {
+        status: submit ? "SUBMITTED" : "PENDING",
+        shippingStreet,
+        shippingCity,
+        shippingState,
+        shippingZip,
+        shippingCountry
+      });
       res.status(201).json(toOrderDto(order));
     } catch (err) {
       if (err instanceof Error && err.message === "CART_EMPTY") {
@@ -78051,15 +78234,11 @@ userOrdersRouter.get(
 var import_express10 = __toESM(require_express2(), 1);
 var adminOrdersRouter = (0, import_express10.Router)();
 adminOrdersRouter.use(basicAuth);
-var ALL_STATUSES = ["PENDING", "CONFIRMED", "FULFILLED", "COMPLETED", "CANCELLED", "REFUNDED"];
-var VALID_TRANSITIONS = {
-  PENDING: ["CONFIRMED", "CANCELLED"],
-  CONFIRMED: ["FULFILLED", "CANCELLED", "REFUNDED"],
-  FULFILLED: ["COMPLETED", "CANCELLED", "REFUNDED"],
-  COMPLETED: [],
-  CANCELLED: [],
-  REFUNDED: []
-};
+var ALL_STATUSES = ["PENDING", "SUBMITTED", "CONFIRMED", "SHIPPED", "FULFILLED", "COMPLETED", "CANCELLED", "REFUNDED"];
+var ADMIN_UI_STATUSES = ["SUBMITTED", "CONFIRMED", "SHIPPED", "CANCELLED"];
+function getAllowedTransitions(_currentStatus) {
+  return ADMIN_UI_STATUSES;
+}
 function toAdminOrderDto(order) {
   return {
     publicId: order.public_id,
@@ -78072,6 +78251,7 @@ function toAdminOrderDto(order) {
     itemCount: order.itemCount,
     createdAt: order.created_at,
     updatedAt: order.updated_at,
+    notes: order.notes,
     shippingStreet: order.shipping_street,
     shippingCity: order.shipping_city,
     shippingState: order.shipping_state,
@@ -78171,13 +78351,13 @@ adminOrdersRouter.patch(
         return;
       }
       const currentStatus = current.status;
-      const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
+      const allowed = getAllowedTransitions(currentStatus);
       if (!allowed.includes(newStatus)) {
         res.status(422).json({
           type: "about:validation-error",
           title: "Unprocessable Entity",
           status: 422,
-          detail: `Invalid status transition: ${currentStatus} \u2192 ${newStatus}. Allowed: [${allowed.join(", ")}]`,
+          detail: `Invalid status: ${newStatus}. Allowed: [${allowed.join(", ")}]`,
           instance: req.path
         });
         return;
@@ -78198,6 +78378,41 @@ adminOrdersRouter.patch(
         status: updated.status,
         updatedAt: updated.updated_at
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+var UpdateNotesSchema = external_exports.object({
+  notes: external_exports.string().max(5e3).nullable()
+});
+adminOrdersRouter.patch(
+  "/:publicId/notes",
+  async (req, res, next) => {
+    try {
+      const parsed = UpdateNotesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: parsed.error.issues.map((i5) => i5.message).join("; "),
+          instance: req.path
+        });
+        return;
+      }
+      const updated = await updateOrderNotes(req.params.publicId, parsed.data.notes);
+      if (!updated) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Order not found: ${req.params.publicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      res.json({ publicId: updated.public_id, notes: updated.notes, updatedAt: updated.updated_at });
     } catch (err) {
       next(err);
     }
@@ -96106,7 +96321,7 @@ var stripe = new stripe_esm_node_default(process.env.STRIPE_SECRET_KEY, {
 // src/routes/checkout.ts
 var checkoutRouter = (0, import_express12.Router)();
 var secretKey2 = new TextEncoder().encode(process.env.SUPABASE_JWT_SECRET ?? "");
-var CartItemInputSchema = external_exports.object({
+var CartItemInputSchema2 = external_exports.object({
   bundlePublicId: external_exports.string().min(1),
   upgradeTier: external_exports.enum(["STANDARD", "PREMIUM"]).default("STANDARD"),
   giftBagOptionId: external_exports.number().int().positive().nullable().optional(),
@@ -96120,7 +96335,7 @@ var IntentSchema = external_exports.object({
   shippingState: external_exports.string().min(1),
   shippingZip: external_exports.string().min(1),
   shippingCountry: external_exports.string().length(2).optional().default("US"),
-  items: external_exports.array(CartItemInputSchema).min(1)
+  items: external_exports.array(CartItemInputSchema2).min(1)
 });
 checkoutRouter.post(
   "/intent",
@@ -96352,12 +96567,22 @@ async function markRedeemed(id) {
   return rows[0];
 }
 async function linkBundle(id, bundlePublicId) {
-  const rows = await sql`
-    UPDATE future_parties
-    SET linked_bundle_public_id = ${bundlePublicId}
-    WHERE id = ${id}
-    RETURNING *
-  `;
+  const rows = await sql.begin(async (tx) => {
+    const updated = await tx`
+      UPDATE future_parties
+      SET linked_bundle_public_id = ${bundlePublicId}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    if (updated.length > 0) {
+      await tx`
+        UPDATE generated_bundle
+        SET status = 'ASSIGNED'
+        WHERE public_id = ${bundlePublicId}
+      `;
+    }
+    return updated;
+  });
   return rows[0];
 }
 async function recordSend(id) {
@@ -96601,12 +96826,142 @@ adminFuturePartiesRouter.post(
   }
 );
 
+// src/routes/admin/generatedBundles.ts
+var import_express16 = __toESM(require_express2(), 1);
+var adminGeneratedBundlesRouter = (0, import_express16.Router)();
+adminGeneratedBundlesRouter.use(basicAuth);
+adminGeneratedBundlesRouter.get(
+  "/:bundlePublicId/items/:slotCode/alternatives",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId, slotCode } = req.params;
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      const item = bundle.items.find((i5) => i5.slotCode === slotCode);
+      if (!item) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Slot not found in bundle: ${slotCode}`,
+          instance: req.path
+        });
+        return;
+      }
+      const agg = await findBundleByPublicId(bundlePublicId);
+      const excludeProductIds = agg ? agg.items.map((i5) => i5.product_id) : [];
+      const alternatives = await findEligibleAlternativesForSlot(
+        item.formFactor,
+        excludeProductIds
+      );
+      res.json(alternatives.map((p3) => ({
+        id: p3.id,
+        name: p3.name,
+        sku: p3.sku,
+        formFactor: p3.form_factor,
+        retailPrice: p3.retail_price,
+        cost: p3.cost,
+        imageUrl: p3.image_url,
+        inventoryQuantity: p3.inventory_quantity
+      })));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminGeneratedBundlesRouter.patch(
+  "/:bundlePublicId/items/:slotCode",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId, slotCode } = req.params;
+      const { productId } = PatchBundleItemRequestSchema.parse(req.body);
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      const item = bundle.items.find((i5) => i5.slotCode === slotCode);
+      if (!item) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Slot not found in bundle: ${slotCode}`,
+          instance: req.path
+        });
+        return;
+      }
+      const product = await getProductById(productId);
+      if (!product) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: `Product not found: ${productId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!product.active) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Product is not active.",
+          instance: req.path
+        });
+        return;
+      }
+      if (product.inventory_quantity < 1) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Product has no available inventory.",
+          instance: req.path
+        });
+        return;
+      }
+      if (product.form_factor !== item.formFactor) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Product form factor does not match slot.",
+          instance: req.path
+        });
+        return;
+      }
+      await patchBundleItem(bundlePublicId, slotCode, product);
+      const updated = await getByPublicId(bundlePublicId);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // src/app.ts
 function createApp() {
-  const app2 = (0, import_express16.default)();
+  const app2 = (0, import_express17.default)();
   app2.use((0, import_cors.default)(corsOptions));
-  app2.use("/api/webhooks/stripe", import_express16.default.raw({ type: "application/json" }), webhookRouter);
-  app2.use(import_express16.default.json());
+  app2.use("/api/webhooks/stripe", import_express17.default.raw({ type: "application/json" }), webhookRouter);
+  app2.use(import_express17.default.json());
   app2.use("/api", healthRouter);
   app2.use("/api/generated-bundles", generatedBundlesRouter);
   app2.use("/api/analytics", analyticsRouter);
@@ -96621,6 +96976,7 @@ function createApp() {
   app2.use("/api/checkout", checkoutRouter);
   app2.use("/api/future-parties", futurePartiesRouter);
   app2.use("/admin/api/future-parties", adminFuturePartiesRouter);
+  app2.use("/admin/api/generated-bundles", adminGeneratedBundlesRouter);
   app2.use(errorHandler);
   return app2;
 }

@@ -230,3 +230,11 @@ export type FuturePartyRequest = z.infer<typeof FuturePartyRequestSchema>;
 export const LinkBundleRequestSchema = z.object({
   bundlePublicId: z.string().min(1).max(30),
 });
+
+/**
+ * Zod schema for PATCH /admin/api/generated-bundles/:bundlePublicId/items/:slotCode body.
+ * Requirements: AC-FP-C.6
+ */
+export const PatchBundleItemRequestSchema = z.object({
+  productId: z.coerce.number().int().positive(),
+});

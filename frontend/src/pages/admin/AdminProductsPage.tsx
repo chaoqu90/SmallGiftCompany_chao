@@ -164,7 +164,7 @@ export function AdminProductsPage() {
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F7F7F5' }}>
       <AdminNav />
-      <Box sx={{ p: 3 }}>
+      <Box sx={{ p: { xs: 2, md: 3 } }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h5" sx={{ fontWeight: 700 }}>Products</Typography>
           <Button
@@ -252,7 +252,8 @@ export function AdminProductsPage() {
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         {!loading && !error && (
-          <TableContainer component={Paper} sx={{ boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <Box sx={{ overflowX: 'auto', width: '100%' }}>
+          <TableContainer component={Paper} sx={{ boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minWidth: 600 }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: '#F7F7F5' }}>
@@ -295,6 +296,7 @@ export function AdminProductsPage() {
               </TableBody>
             </Table>
           </TableContainer>
+          </Box>
         )}
       </Box>
 

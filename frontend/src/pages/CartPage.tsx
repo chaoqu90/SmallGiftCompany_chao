@@ -231,6 +231,10 @@ function CartItemCard({
   )
 }
 
+// ── Feature flag ──────────────────────────────────────────────────────────────
+
+const onlinePaymentEnabled = import.meta.env.VITE_ENABLE_ONLINE_PAYMENT !== 'false'
+
 // ── CartPage ──────────────────────────────────────────────────────────────────
 
 export function CartPage() {
@@ -307,14 +311,13 @@ export function CartPage() {
           <Typography fontWeight={700} variant="h6">{fmt.format(subtotal)}</Typography>
         </Box>
         <Box sx={{ mt: 1 }}>
-          {/* "Proceed to Payment" button */}
           <Button
             variant="contained"
             size="large"
             onClick={() => navigate('/checkout')}
             disabled={items.length === 0}
           >
-            Proceed to Payment
+            {onlinePaymentEnabled ? 'Proceed to Payment' : 'Submit Order'}
           </Button>
         </Box>
       </Box>

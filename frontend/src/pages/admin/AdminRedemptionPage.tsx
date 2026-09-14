@@ -90,7 +90,7 @@ export function AdminRedemptionPage() {
     <>
       <AdminNav />
 
-      <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ p: { xs: 2, md: 3 }, display: 'flex', justifyContent: 'center' }}>
         <Paper
           variant="outlined"
           sx={{ p: 4, maxWidth: 480, width: '100%' }}

@@ -232,6 +232,37 @@ export async function deleteProduct(id: number): Promise<boolean> {
 }
 
 /**
+ * Finds products eligible as alternatives for a bundle slot swap.
+ * Filters by form factor, active status, and inventory only — no age/audience/occasion
+ * filters (intentional admin override per AC-FP-C.3).
+ * Excludes products already selected in the bundle (excludeProductIds).
+ * Requirements: AC-FP-C.3
+ * Design: specs/future-party/design.md §3.3
+ */
+export async function findEligibleAlternativesForSlot(
+  formFactor: string,
+  excludeProductIds: number[],
+): Promise<ProductRow[]> {
+  if (excludeProductIds.length === 0) {
+    return sql<ProductRow[]>`
+      SELECT * FROM product
+      WHERE form_factor = ${formFactor}
+        AND active = true
+        AND inventory_quantity > 0
+      ORDER BY name ASC
+    `;
+  }
+  return sql<ProductRow[]>`
+    SELECT * FROM product
+    WHERE form_factor = ${formFactor}
+      AND active = true
+      AND inventory_quantity > 0
+      AND id NOT IN ${sql(excludeProductIds)}
+    ORDER BY name ASC
+  `;
+}
+
+/**
  * Finds all products eligible for bundle generation:
  *   - active = true
  *   - inventory_quantity > 0

@@ -61,6 +61,50 @@ export interface PaginatedOrdersDto {
 
 // ─── API functions ────────────────────────────────────────────────────────────
 
+export interface SubmitOrderBody {
+  email: string;
+  name?: string;
+  shippingStreet: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingZip: string;
+  shippingCountry?: string;
+  items: Array<{
+    bundlePublicId: string;
+    upgradeTier: 'STANDARD' | 'PREMIUM';
+    giftBagOptionId: number | null;
+    quantity: number;
+  }>;
+}
+
+/**
+ * Submits an order offline (no Stripe payment). Creates the order with status SUBMITTED.
+ * Requires X-Session-Id header. Auth is optional.
+ */
+export async function submitOrder(
+  sessionId: string,
+  body: SubmitOrderBody,
+  accessToken?: string,
+): Promise<OrderDto> {
+  const headers: Record<string, string> = {
+    'X-Session-Id': sessionId,
+    'Content-Type': 'application/json',
+  };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  const res = await fetch(`${BASE}/api/orders`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...body, submit: true }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw Object.assign(new Error('Failed to submit order'), { status: res.status, body: err });
+  }
+  return res.json() as Promise<OrderDto>;
+}
+
 /**
  * Creates an order from the session's current cart.
  * Requires X-Session-Id header and { email, name? } body.

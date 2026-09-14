@@ -1,3 +1,5 @@
+import type { GeneratedBundleResponse } from '../types/catalog'
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function adminRequest<T>(path: string, authHeader: string, init?: RequestInit): Promise<T> {
@@ -10,7 +12,17 @@ async function adminRequest<T>(path: string, authHeader: string, init?: RequestI
     ...init,
   })
   if (res.status === 401) throw new Error('UNAUTHORIZED')
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+  if (!res.ok) {
+    // Try to extract RFC 7807 detail for inline error display
+    let detail: string | undefined
+    try {
+      const body = await res.json() as { detail?: string }
+      detail = body.detail
+    } catch {
+      // ignore parse errors — fall through to generic message
+    }
+    throw new Error(detail ?? `Request failed: ${res.status}`)
+  }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
@@ -65,13 +77,32 @@ export interface AdminBundleListItem {
   createdAt: string
 }
 
+export interface AdminBundleAssociatedFutureParty {
+  id:          number
+  email:       string
+  partyDate:   string
+  kidGender:   string
+  kidAge:      number
+  submittedAt: string
+}
+
+export interface AdminBundleAssociatedOrder {
+  publicId:      string
+  customerEmail: string
+  status:        string
+  total:         string
+  createdAt:     string
+}
+
 export interface AdminBundleDetail extends AdminBundleListItem {
   items: {
-    slotCode: string
+    slotCode:    string
     productName: string
-    sku: string
-    formFactor: string
+    sku:         string
+    formFactor:  string
   }[]
+  futureParties: AdminBundleAssociatedFutureParty[]
+  orders:        AdminBundleAssociatedOrder[]
 }
 
 export interface AdminDashboard {
@@ -110,6 +141,23 @@ export interface AffinitiesPayload {
 // ─── Future Parties (FEAT-004) ────────────────────────────────────────────────
 
 /**
+ * Alternative product eligible to replace a slot in a generated bundle.
+ * Returned by GET /admin/api/generated-bundles/:bundlePublicId/items/:slotCode/alternatives.
+ * Requirements: AC-FP-C.3, AC-FP-C.5
+ * Design: specs/future-party/design.md §3.8
+ */
+export interface AlternativeProductDto {
+  id:                number
+  name:              string
+  sku:               string
+  formFactor:        string
+  retailPrice:       string   // NUMERIC string from postgres.js, e.g. "12.99"
+  cost:              string
+  imageUrl:          string | null
+  inventoryQuantity: number
+}
+
+/**
  * Admin representation of a future party lead.
  * Requirements: AC4.3, AC4.4, AC5.1, AC6.1, AC6.2
  * Design: specs/future-party/design.md §5.2
@@ -145,6 +193,9 @@ export const adminApi = {
 
   getBundles: (auth: string) =>
     adminRequest<AdminBundleListItem[]>('/admin/api/bundles/', auth),
+
+  clearIdleBundles: (auth: string) =>
+    adminRequest<{ deleted: number }>('/admin/api/bundles/generated', auth, { method: 'DELETE' }),
 
   getBundleDetail: (auth: string, publicId: string) =>
     adminRequest<AdminBundleDetail>(`/admin/api/bundles/${publicId}`, auth),
@@ -231,6 +282,29 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ code }),
     }),
+
+  /**
+   * GET /admin/api/generated-bundles/:bundlePublicId/items/:slotCode/alternatives
+   * Returns eligible alternative products for a slot swap.
+   * Requirements: AC-FP-C.3, AC-FP-C.5
+   */
+  getAlternativesForSlot: (auth: string, bundlePublicId: string, slotCode: string) =>
+    adminRequest<AlternativeProductDto[]>(
+      `/admin/api/generated-bundles/${bundlePublicId}/items/${slotCode}/alternatives`, auth,
+    ),
+
+  /**
+   * PATCH /admin/api/generated-bundles/:bundlePublicId/items/:slotCode
+   * Swaps the product in a bundle slot; returns the updated bundle.
+   * Requirements: AC-FP-C.5, AC-FP-C.6
+   */
+  patchBundleItem: (auth: string, bundlePublicId: string, slotCode: string, productId: number) =>
+    adminRequest<GeneratedBundleResponse>(
+      `/admin/api/generated-bundles/${bundlePublicId}/items/${slotCode}`, auth, {
+        method: 'PATCH',
+        body: JSON.stringify({ productId }),
+      },
+    ),
 
   /** Step 1: get a presigned PUT URL + final public URL from the backend. */
   getImageUploadUrl: (auth: string, filename: string, contentType: string) =>

@@ -17,6 +17,7 @@ import {
   listAllOrders,
   findOrderByPublicId,
   updateOrderStatus,
+  updateOrderNotes,
   type OrderWithLineItems,
 } from '../../repositories/orders.js';
 
@@ -27,18 +28,16 @@ adminOrdersRouter.use(basicAuth);
 
 // ─── Valid status values and lifecycle transitions ─────────────────────────────
 
-const ALL_STATUSES = ['PENDING', 'CONFIRMED', 'FULFILLED', 'COMPLETED', 'CANCELLED', 'REFUNDED'] as const;
+const ALL_STATUSES = ['PENDING', 'SUBMITTED', 'CONFIRMED', 'SHIPPED', 'FULFILLED', 'COMPLETED', 'CANCELLED', 'REFUNDED'] as const;
 type OrderStatus = typeof ALL_STATUSES[number];
 
-/** Valid forward transitions per design.md §3 */
-const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING:    ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED:  ['FULFILLED', 'CANCELLED', 'REFUNDED'],
-  FULFILLED:  ['COMPLETED', 'CANCELLED', 'REFUNDED'],
-  COMPLETED:  [],
-  CANCELLED:  [],
-  REFUNDED:   [],
-};
+// Admin-accessible statuses shown in the UI dropdown
+const ADMIN_UI_STATUSES: OrderStatus[] = ['SUBMITTED', 'CONFIRMED', 'SHIPPED', 'CANCELLED'];
+
+/** Admin can move any order to any of the 4 admin-controlled statuses freely */
+function getAllowedTransitions(_currentStatus: OrderStatus): OrderStatus[] {
+  return ADMIN_UI_STATUSES;
+}
 
 // ─── DTO mapper ───────────────────────────────────────────────────────────────
 
@@ -54,6 +53,7 @@ function toAdminOrderDto(order: OrderWithLineItems) {
     itemCount: order.itemCount,
     createdAt: order.created_at,
     updatedAt: order.updated_at,
+    notes: order.notes,
     shippingStreet: order.shipping_street,
     shippingCity: order.shipping_city,
     shippingState: order.shipping_state,
@@ -171,14 +171,14 @@ adminOrdersRouter.patch(
       }
 
       const currentStatus = current.status as OrderStatus;
-      const allowed = VALID_TRANSITIONS[currentStatus] ?? [];
+      const allowed = getAllowedTransitions(currentStatus);
 
       if (!allowed.includes(newStatus as OrderStatus)) {
         res.status(422).json({
           type: 'about:validation-error',
           title: 'Unprocessable Entity',
           status: 422,
-          detail: `Invalid status transition: ${currentStatus} → ${newStatus}. Allowed: [${allowed.join(', ')}]`,
+          detail: `Invalid status: ${newStatus}. Allowed: [${allowed.join(', ')}]`,
           instance: req.path,
         });
         return;
@@ -201,6 +201,47 @@ adminOrdersRouter.patch(
         status: updated.status,
         updatedAt: updated.updated_at,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── PATCH /admin/api/orders/:publicId/notes ──────────────────────────────────
+
+const UpdateNotesSchema = z.object({
+  notes: z.string().max(5000).nullable(),
+});
+
+adminOrdersRouter.patch(
+  '/:publicId/notes',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const parsed = UpdateNotesSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          type: 'about:validation-error',
+          title: 'Bad Request',
+          status: 400,
+          detail: parsed.error.issues.map(i => i.message).join('; '),
+          instance: req.path,
+        });
+        return;
+      }
+
+      const updated = await updateOrderNotes(req.params.publicId, parsed.data.notes);
+      if (!updated) {
+        res.status(404).json({
+          type: 'about:not-found',
+          title: 'Not Found',
+          status: 404,
+          detail: `Order not found: ${req.params.publicId}`,
+          instance: req.path,
+        });
+        return;
+      }
+
+      res.json({ publicId: updated.public_id, notes: updated.notes, updatedAt: updated.updated_at });
     } catch (err) {
       next(err);
     }

@@ -11,6 +11,7 @@ import { AdminDashboardPage }      from './pages/admin/AdminDashboardPage'
 import { AdminOrdersPage }         from './pages/admin/AdminOrdersPage'
 import { AdminOrderDetailPage }    from './pages/admin/AdminOrderDetailPage'
 import { AdminFuturePartiesPage }  from './pages/admin/AdminFuturePartiesPage'
+import { AdminBundlePreviewPage }  from './pages/admin/AdminBundlePreviewPage'
 import { AdminRedemptionPage }     from './pages/admin/AdminRedemptionPage'
 // User-management routes (FEAT-001)
 import { LoginPage }                    from './pages/LoginPage'
@@ -27,8 +28,9 @@ import { OrderDetailPage }  from './pages/OrderDetailPage'
 import { NavBar }           from './components/NavBar'
 import { Footer }          from './components/Footer'
 // Payment routes (FEAT-003)
-import { OrderConfirmationPage } from './pages/OrderConfirmationPage'
-import { OrderSearchPage }       from './pages/OrderSearchPage'
+import { OrderConfirmationPage }          from './pages/OrderConfirmationPage'
+import { OrderSearchPage }                from './pages/OrderSearchPage'
+import { SubmittedOrderConfirmationPage } from './pages/SubmittedOrderConfirmationPage'
 
 function AdminLayout() {
   return (
@@ -83,8 +85,9 @@ function App() {
         />
         <Route path="/orders/:publicId"    element={<OrderDetailPage />} />
         {/* Payment routes (FEAT-003) */}
-        <Route path="/orders/confirmation" element={<OrderConfirmationPage />} />
-        <Route path="/orders/search"       element={<OrderSearchPage />} />
+        <Route path="/orders/confirmation"           element={<OrderConfirmationPage />} />
+        <Route path="/orders/submitted-confirmation" element={<SubmittedOrderConfirmationPage />} />
+        <Route path="/orders/search"                 element={<OrderSearchPage />} />
       </Route>
 
       {/* ── Admin routes (own layout — no NavBar) ─────────────────────────── */}
@@ -97,6 +100,7 @@ function App() {
           <Route path="/admin/orders"          element={<AdminOrdersPage />} />
           <Route path="/admin/orders/:publicId" element={<AdminOrderDetailPage />} />
           <Route path="/admin/future-parties"  element={<AdminFuturePartiesPage />} />
+          <Route path="/admin/bundle-preview/:bundlePublicId" element={<AdminBundlePreviewPage />} />
           <Route path="/admin/redemption"      element={<AdminRedemptionPage />} />
         </Route>
       </Route>

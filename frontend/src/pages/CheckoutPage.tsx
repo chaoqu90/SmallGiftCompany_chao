@@ -42,8 +42,12 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { useCart } from '../contexts/CartContext'
 import { getGiftBagOptions, type GiftBagOptionDto } from '../lib/cartApi'
-import { createPaymentIntent } from '../lib/ordersApi'
+import { createPaymentIntent, submitOrder } from '../lib/ordersApi'
 import { getProfile } from '../lib/userApi'
+
+// ── Feature flag ──────────────────────────────────────────────────────────────
+
+const onlinePaymentEnabled = import.meta.env.VITE_ENABLE_ONLINE_PAYMENT !== 'false'
 
 // ─── Stripe initialisation ────────────────────────────────────────────────────
 
@@ -136,7 +140,7 @@ function PaymentForm({ totalCents, onBack }: PaymentFormProps) {
 
 export function CheckoutPage() {
   const { session } = useAuth()
-  const { sessionId, items } = useCart()
+  const { sessionId, items, clearCart } = useCart()
   const navigate = useNavigate()
 
   const [giftBagOptions, setGiftBagOptions] = useState<GiftBagOptionDto[]>([])
@@ -149,11 +153,15 @@ export function CheckoutPage() {
   const [shippingState, setShippingState] = useState('')
   const [shippingZip, setShippingZip] = useState('')
 
-  // Phase 2 state
+  // Phase 2 state (online payment path)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [totalCents, setTotalCents] = useState(0)
   const [creatingIntent, setCreatingIntent] = useState(false)
   const [intentError, setIntentError] = useState<string | null>(null)
+
+  // Offline submit state
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   // Pre-populate contact fields from auth session and profile
   useEffect(() => {
@@ -190,6 +198,39 @@ export function CheckoutPage() {
     shippingCity.trim() &&
     shippingState.trim() &&
     shippingZip.trim()
+
+  async function handleSubmitOrder() {
+    if (!canContinue) return
+    setSubmitError(null)
+    setSubmitting(true)
+    try {
+      await submitOrder(
+        sessionId,
+        {
+          email: email.trim(),
+          name: fullName.trim() || undefined,
+          shippingStreet: shippingStreet.trim(),
+          shippingCity: shippingCity.trim(),
+          shippingState: shippingState.trim(),
+          shippingZip: shippingZip.trim(),
+          shippingCountry: 'US',
+          items: items.map(item => ({
+            bundlePublicId: item.bundle.generatedBundleId,
+            upgradeTier: item.upgradeTier,
+            giftBagOptionId: item.giftBagOptionId,
+            quantity: item.quantity,
+          })),
+        },
+        session?.access_token,
+      )
+      clearCart()
+      navigate('/orders/submitted-confirmation')
+    } catch {
+      setSubmitError('Something went wrong. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   async function handleContinueToPayment() {
     if (!canContinue) return
@@ -373,16 +414,32 @@ export function CheckoutPage() {
             <Alert severity="error" sx={{ mb: 2 }}>{intentError}</Alert>
           )}
 
+          {submitError && (
+            <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>
+          )}
+
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button
-              variant="contained"
-              size="large"
-              onClick={handleContinueToPayment}
-              disabled={!canContinue}
-              startIcon={creatingIntent ? <CircularProgress size={18} color="inherit" /> : null}
-            >
-              {creatingIntent ? 'Loading…' : 'Continue to Payment'}
-            </Button>
+            {onlinePaymentEnabled ? (
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleContinueToPayment}
+                disabled={!canContinue}
+                startIcon={creatingIntent ? <CircularProgress size={18} color="inherit" /> : null}
+              >
+                {creatingIntent ? 'Loading…' : 'Continue to Payment'}
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                size="large"
+                onClick={handleSubmitOrder}
+                disabled={!canContinue || submitting}
+                startIcon={submitting ? <CircularProgress size={18} color="inherit" /> : null}
+              >
+                {submitting ? 'Submitting…' : 'Submit Order'}
+              </Button>
+            )}
           </Box>
         </>
       )}

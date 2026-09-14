@@ -89,6 +89,14 @@ export async function createOrder(
   email: string,
   name: string | null,
   userId: string | null,
+  options?: {
+    status?: string;
+    shippingStreet?: string | null;
+    shippingCity?: string | null;
+    shippingState?: string | null;
+    shippingZip?: string | null;
+    shippingCountry?: string | null;
+  },
 ): Promise<OrderWithLineItems> {
   return sql.begin(async (tx) => {
     // Step 1: Lock cart items FOR UPDATE to prevent duplicate checkout races
@@ -174,22 +182,34 @@ export async function createOrder(
 
     // Step 3: INSERT customer_order
     const publicId = `ord_${randomBytes(6).toString('hex')}`; // ord_<12-char-hex>
+    const orderStatus = options?.status ?? 'PENDING';
+    const shippingStreet  = options?.shippingStreet  ?? null;
+    const shippingCity    = options?.shippingCity    ?? null;
+    const shippingState   = options?.shippingState   ?? null;
+    const shippingZip     = options?.shippingZip     ?? null;
+    const shippingCountry = options?.shippingCountry ?? null;
 
     const orderRows = await tx<CustomerOrderRow[]>`
       INSERT INTO customer_order (
         public_id, session_id, user_id, status,
         subtotal, total, currency,
-        customer_email, customer_name
+        customer_email, customer_name,
+        shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country
       ) VALUES (
         ${publicId},
         ${sessionId},
         ${userId},
-        'PENDING',
+        ${orderStatus},
         ${subtotal},
         ${subtotal},
         'USD',
         ${email},
-        ${name}
+        ${name},
+        ${shippingStreet},
+        ${shippingCity},
+        ${shippingState},
+        ${shippingZip},
+        ${shippingCountry}
       )
       RETURNING *
     `;
@@ -209,6 +229,13 @@ export async function createOrder(
     }));
 
     await tx`INSERT INTO order_line_item ${tx(lineItemRows)}`;
+
+    // Mark all bundles in this order as ORDERED
+    await tx`
+      UPDATE generated_bundle
+      SET status = 'ORDERED'
+      WHERE id IN ${tx(bundleIds)}
+    `;
 
     // Step 5: DELETE cart items (atomic — cart cleared only on commit)
     await tx`DELETE FROM cart_item WHERE session_id = ${sessionId}`;
@@ -415,6 +442,25 @@ export async function updateOrderStatus(
   return rows[0] ?? null;
 }
 
+// ─── updateOrderNotes (admin) ────────────────────────────────────────────────
+
+/**
+ * Admin: overwrite the internal notes field on an order.
+ * Returns the updated order or null if not found.
+ */
+export async function updateOrderNotes(
+  publicId: string,
+  notes: string | null,
+): Promise<CustomerOrderRow | null> {
+  const rows = await sql<CustomerOrderRow[]>`
+    UPDATE customer_order
+    SET notes = ${notes}, updated_at = now()
+    WHERE public_id = ${publicId}
+    RETURNING *
+  `;
+  return rows[0] ?? null;
+}
+
 // ─── confirmOrder (Stripe webhook) ───────────────────────────────────────────
 
 export interface ConfirmOrderParams {
@@ -566,6 +612,13 @@ export async function confirmOrder(
       gift_bag_price_snapshot: li.gift_bag_price_snapshot,
     }));
     await tx`INSERT INTO order_line_item ${tx(lineItemRows)}`;
+
+    // Mark all bundles in this order as ORDERED
+    await tx`
+      UPDATE generated_bundle
+      SET status = 'ORDERED'
+      WHERE id IN ${tx(bundleIds)}
+    `;
 
     // Step 5: DELETE cart items
     await tx`DELETE FROM cart_item WHERE session_id = ${sessionId}`;

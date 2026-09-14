@@ -20,6 +20,7 @@ import {
   searchOrder,
   type OrderWithLineItems,
 } from '../../repositories/orders.js';
+import { clearCart, upsertCartItemExact, findBundleIdByPublicId } from '../../repositories/cart.js';
 
 export const userOrdersRouter = Router();
 
@@ -60,9 +61,23 @@ function toOrderDto(order: OrderWithLineItems) {
 // No JWT required. Reads X-Session-Id header (required, 400 if missing).
 // Optionally reads Authorization: Bearer header — if valid, stores userId on order.
 
+const CartItemInputSchema = z.object({
+  bundlePublicId:  z.string().min(1),
+  upgradeTier:     z.enum(['STANDARD', 'PREMIUM']).default('STANDARD'),
+  giftBagOptionId: z.number().int().positive().nullable().optional(),
+  quantity:        z.number().int().min(1).default(1),
+});
+
 const CreateOrderSchema = z.object({
-  email: z.string().email(),
-  name: z.string().optional(),
+  email:           z.string().email(),
+  name:            z.string().optional(),
+  submit:          z.boolean().optional().default(false),
+  shippingStreet:  z.string().min(1).optional(),
+  shippingCity:    z.string().min(1).optional(),
+  shippingState:   z.string().min(1).optional(),
+  shippingZip:     z.string().min(1).optional(),
+  shippingCountry: z.string().length(2).optional(),
+  items:           z.array(CartItemInputSchema).min(1).optional(),
 });
 
 userOrdersRouter.post(
@@ -94,7 +109,28 @@ userOrdersRouter.post(
         });
         return;
       }
-      const { email, name } = parsed.data;
+      const { email, name, submit, shippingStreet, shippingCity, shippingState, shippingZip, shippingCountry, items } = parsed.data;
+      const sid = sessionId.trim();
+
+      // If the caller sent cart items (offline submit flow), write them to DB first.
+      // This mirrors what POST /api/checkout/intent does for the Stripe path.
+      if (items && items.length > 0) {
+        await clearCart(sid);
+        for (const item of items) {
+          const bundleDbId = await findBundleIdByPublicId(item.bundlePublicId);
+          if (!bundleDbId) {
+            res.status(422).json({
+              type: 'about:validation-error',
+              title: 'Bundle not found',
+              status: 422,
+              detail: `Bundle ${item.bundlePublicId} not found. Please generate a new bundle.`,
+              instance: req.path,
+            });
+            return;
+          }
+          await upsertCartItemExact(sid, bundleDbId, item.upgradeTier, item.giftBagOptionId ?? null, item.quantity);
+        }
+      }
 
       // Optionally extract userId from JWT (fail silently if absent or invalid)
       let userId: string | null = null;
@@ -109,7 +145,14 @@ userOrdersRouter.post(
         }
       }
 
-      const order = await createOrder(sessionId.trim(), email, name ?? null, userId);
+      const order = await createOrder(sid, email, name ?? null, userId, {
+        status: submit ? 'SUBMITTED' : 'PENDING',
+        shippingStreet,
+        shippingCity,
+        shippingState,
+        shippingZip,
+        shippingCountry,
+      });
       res.status(201).json(toOrderDto(order));
     } catch (err) {
       if (err instanceof Error && err.message === 'CART_EMPTY') {

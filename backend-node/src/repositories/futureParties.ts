@@ -166,12 +166,22 @@ export async function linkBundle(
   id: number,
   bundlePublicId: string,
 ): Promise<FuturePartyRow | undefined> {
-  const rows = await sql<FuturePartyRow[]>`
-    UPDATE future_parties
-    SET linked_bundle_public_id = ${bundlePublicId}
-    WHERE id = ${id}
-    RETURNING *
-  `;
+  const rows = await sql.begin(async tx => {
+    const updated = await tx<FuturePartyRow[]>`
+      UPDATE future_parties
+      SET linked_bundle_public_id = ${bundlePublicId}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    if (updated.length > 0) {
+      await tx`
+        UPDATE generated_bundle
+        SET status = 'ASSIGNED'
+        WHERE public_id = ${bundlePublicId}
+      `;
+    }
+    return updated;
+  });
   return rows[0];
 }
 

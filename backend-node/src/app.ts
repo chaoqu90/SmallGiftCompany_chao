@@ -39,8 +39,9 @@ import { checkoutRouter } from './routes/checkout.js';
 import { webhookRouter }  from './routes/webhooks.js';
 
 // Future Party routers (FEAT-004)
-import { futurePartiesRouter }      from './routes/futureParties.js';
-import { adminFuturePartiesRouter } from './routes/admin/futureParties.js';
+import { futurePartiesRouter }           from './routes/futureParties.js';
+import { adminFuturePartiesRouter }      from './routes/admin/futureParties.js';
+import { adminGeneratedBundlesRouter }   from './routes/admin/generatedBundles.js';
 
 export function createApp() {
   const app = express();
@@ -76,8 +77,9 @@ export function createApp() {
   app.use('/api/checkout', checkoutRouter);
 
   // ── Future Party routes (FEAT-004) ────────────────────────────────────────
-  app.use('/api/future-parties',       futurePartiesRouter);       // public — no auth (AC7.1, AC7.3)
-  app.use('/admin/api/future-parties', adminFuturePartiesRouter);  // basicAuth inside router (AC7.2, AC7.3)
+  app.use('/api/future-parties',              futurePartiesRouter);             // public — no auth (AC7.1, AC7.3)
+  app.use('/admin/api/future-parties',        adminFuturePartiesRouter);        // basicAuth inside router (AC7.2, AC7.3)
+  app.use('/admin/api/generated-bundles',     adminGeneratedBundlesRouter);     // basicAuth inside router (AC7.2, AC7.3)
 
   // ── Error handler (MUST be last) ─────────────────────────────────────────
   app.use(errorHandler);

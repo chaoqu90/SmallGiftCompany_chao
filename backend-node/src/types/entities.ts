@@ -198,7 +198,7 @@ export interface CustomerOrderRow {
   public_id: string;
   user_id: string | null;
   session_id: string;
-  status: string;                  // PENDING | CONFIRMED | FULFILLED | COMPLETED | CANCELLED | REFUNDED
+  status: string;                  // PENDING | SUBMITTED | CONFIRMED | FULFILLED | COMPLETED | CANCELLED | REFUNDED
   subtotal: string;                // NUMERIC(10,2) — postgres.js returns as string
   total: string;                   // NUMERIC(10,2)
   currency: string;

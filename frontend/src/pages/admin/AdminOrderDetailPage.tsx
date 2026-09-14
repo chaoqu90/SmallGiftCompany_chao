@@ -8,16 +8,14 @@
  *
  * Requirements: R8 (AC8.6–AC8.10)
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link as RouterLink } from 'react-router-dom'
 import {
   Alert,
   Box,
-  Chip,
+  Button,
   CircularProgress,
   Divider,
-  FormControl,
-  InputLabel,
   Link,
   MenuItem,
   Paper,
@@ -29,29 +27,23 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Typography,
 } from '@mui/material'
+import SaveIcon from '@mui/icons-material/Save'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
 
 const BASE = import.meta.env.VITE_API_BASE_URL as string
 
-type OrderStatus = 'PENDING' | 'CONFIRMED' | 'FULFILLED' | 'COMPLETED' | 'CANCELLED' | 'REFUNDED'
+// Statuses available in the admin dropdown
+const ADMIN_STATUSES = ['SUBMITTED', 'CONFIRMED', 'SHIPPED', 'CANCELLED'] as const
+type AdminStatus = typeof ADMIN_STATUSES[number]
 
-// Valid forward transitions per design.md §3 (AC8.9)
-const VALID_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
-  PENDING:    ['CONFIRMED', 'CANCELLED'],
-  CONFIRMED:  ['FULFILLED', 'CANCELLED', 'REFUNDED'],
-  FULFILLED:  ['COMPLETED', 'CANCELLED', 'REFUNDED'],
-  COMPLETED:  [],
-  CANCELLED:  [],
-  REFUNDED:   [],
-}
-
-type ChipColor = 'default' | 'info' | 'warning' | 'success' | 'error'
-const STATUS_COLORS: Record<string, ChipColor> = {
-  PENDING: 'default', CONFIRMED: 'info', FULFILLED: 'warning',
-  COMPLETED: 'success', CANCELLED: 'error', REFUNDED: 'default',
+const STATUS_BG: Record<string, string> = {
+  PENDING: '#F5F5F5', SUBMITTED: '#E3F2FD', CONFIRMED: '#E8F5E9',
+  SHIPPED: '#FFF8E1', FULFILLED: '#FFF8E1',
+  COMPLETED: '#E8F5E9', CANCELLED: '#FFEBEE', REFUNDED: '#F5F5F5',
 }
 
 interface BundleItem {
@@ -88,6 +80,7 @@ interface AdminOrderDetail {
   customerName: string | null
   itemCount: number
   createdAt: string
+  notes: string | null
   shippingStreet: string | null
   shippingCity: string | null
   shippingState: string | null
@@ -108,6 +101,13 @@ export function AdminOrderDetailPage() {
   const [statusError, setStatusError] = useState<string | null>(null)
   const [updatingStatus, setUpdatingStatus] = useState(false)
 
+  // Notes / comments
+  const [notesText, setNotesText] = useState('')
+  const [savingNotes, setSavingNotes] = useState(false)
+  const [notesSaved, setNotesSaved] = useState(false)
+  const [notesError, setNotesError] = useState<string | null>(null)
+  const notesSavedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     if (!authHeader || !publicId) return
     setLoading(true)
@@ -119,7 +119,7 @@ export function AdminOrderDetailPage() {
         if (!res.ok) throw new Error(`Failed: ${res.status}`)
         return res.json() as Promise<AdminOrderDetail>
       })
-      .then(data => { if (data) setOrder(data) })
+      .then(data => { if (data) { setOrder(data); setNotesText(data.notes ?? '') } })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [authHeader, publicId])
@@ -150,11 +150,37 @@ export function AdminOrderDetailPage() {
     }
   }
 
+  async function handleSaveNotes() {
+    if (!authHeader || !publicId) return
+    setNotesError(null)
+    setSavingNotes(true)
+    try {
+      const res = await fetch(`${BASE}/admin/api/orders/${publicId}/notes`, {
+        method: 'PATCH',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: notesText.trim() || null }),
+      })
+      if (!res.ok) {
+        setNotesError('Failed to save notes.')
+        return
+      }
+      const data = await res.json()
+      setOrder(prev => prev ? { ...prev, notes: data.notes } : prev)
+      setNotesSaved(true)
+      if (notesSavedTimer.current) clearTimeout(notesSavedTimer.current)
+      notesSavedTimer.current = setTimeout(() => setNotesSaved(false), 2500)
+    } catch {
+      setNotesError('Failed to save notes. Please try again.')
+    } finally {
+      setSavingNotes(false)
+    }
+  }
+
   if (loading) {
     return (
       <Box sx={{ minHeight: '100vh', bgcolor: '#F7F7F5' }}>
         <AdminNav />
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: { xs: 2, md: 3 } }}>
           <Skeleton variant="rectangular" height={120} sx={{ mb: 2, borderRadius: 1 }} />
           <Skeleton variant="rectangular" height={200} />
         </Box>
@@ -166,7 +192,7 @@ export function AdminOrderDetailPage() {
     return (
       <Box sx={{ minHeight: '100vh', bgcolor: '#F7F7F5' }}>
         <AdminNav />
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: { xs: 2, md: 3 } }}>
           <Typography variant="h6" mb={2}>Order not found</Typography>
           <Link component={RouterLink} to="/admin/orders">Back to Orders</Link>
         </Box>
@@ -174,27 +200,25 @@ export function AdminOrderDetailPage() {
     )
   }
 
-  const allowedTransitions = VALID_TRANSITIONS[order.status as OrderStatus] ?? []
-
   return (
     <Box sx={{ minHeight: '100vh', bgcolor: '#F7F7F5' }}>
       <AdminNav />
-      <Box sx={{ p: 3, maxWidth: 900 }}>
+      <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 900 }}>
         {/* Header (AC8.6) */}
         <Paper sx={{ p: 3, mb: 3, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            <Box>
+            <Box sx={{ minWidth: 120 }}>
               <Typography variant="caption" color="text.secondary">Order ID</Typography>
               <Typography variant="h6" fontFamily="monospace">{order.publicId}</Typography>
             </Box>
-            <Box>
+            <Box sx={{ minWidth: 120 }}>
               <Typography variant="caption" color="text.secondary">Customer</Typography>
               <Typography>{order.customerEmail}</Typography>
               {order.customerName && (
                 <Typography variant="body2" color="text.secondary">{order.customerName}</Typography>
               )}
             </Box>
-            <Box>
+            <Box sx={{ minWidth: 120 }}>
               <Typography variant="caption" color="text.secondary">Created</Typography>
               <Typography>
                 {new Intl.DateTimeFormat(undefined, {
@@ -202,7 +226,7 @@ export function AdminOrderDetailPage() {
                 }).format(new Date(order.createdAt))}
               </Typography>
             </Box>
-            <Box>
+            <Box sx={{ minWidth: 120 }}>
               <Typography variant="caption" color="text.secondary">Total</Typography>
               <Typography fontWeight={700}>{fmt.format(order.total)}</Typography>
             </Box>
@@ -210,35 +234,34 @@ export function AdminOrderDetailPage() {
 
           <Divider sx={{ my: 2 }} />
 
-          {/* Current status + update control (AC8.8) */}
+          {/* Status — single inline Select */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Box>
-              <Typography variant="caption" color="text.secondary" display="block">Current Status</Typography>
-              <Chip label={order.status} color={STATUS_COLORS[order.status] ?? 'default'} />
+              <Typography variant="caption" color="text.secondary" display="block" mb={0.5}>Status</Typography>
+              <Select
+                size="small"
+                value={order.status}
+                disabled={updatingStatus}
+                onChange={e => handleStatusChange(e.target.value)}
+                sx={{
+                  minWidth: 160,
+                  fontWeight: 600,
+                  bgcolor: STATUS_BG[order.status] ?? '#F5F5F5',
+                  '& .MuiOutlinedInput-notchedOutline': { border: 'none' },
+                  borderRadius: 2,
+                }}
+              >
+                {!ADMIN_STATUSES.includes(order.status as AdminStatus) && (
+                  <MenuItem value={order.status} disabled>{order.status}</MenuItem>
+                )}
+                {ADMIN_STATUSES.map(s => (
+                  <MenuItem key={s} value={s}>{s}</MenuItem>
+                ))}
+              </Select>
             </Box>
-
-            {/* Status update dropdown — only shows valid transitions (AC8.9) */}
-            {allowedTransitions.length > 0 && (
-              <FormControl size="small" sx={{ minWidth: 180 }}>
-                <InputLabel>Update Status</InputLabel>
-                <Select
-                  value=""
-                  label="Update Status"
-                  onChange={e => handleStatusChange(e.target.value)}
-                  disabled={updatingStatus}
-                  displayEmpty
-                >
-                  {allowedTransitions.map(s => (
-                    <MenuItem key={s} value={s}>{s}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
             {updatingStatus && <CircularProgress size={20} />}
           </Box>
 
-          {/* Status update error (AC9.9) */}
           {statusError && (
             <Alert severity="error" sx={{ mt: 2 }} onClose={() => setStatusError(null)}>
               {statusError}
@@ -264,7 +287,8 @@ export function AdminOrderDetailPage() {
 
         {/* Line items table (AC8.7) */}
         <Typography variant="h6" fontWeight={700} mb={2}>Line Items</Typography>
-        <TableContainer component={Paper} sx={{ mb: 3, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+        <Box sx={{ overflowX: 'auto', width: '100%' }}>
+        <TableContainer component={Paper} sx={{ mb: 3, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', minWidth: 600 }}>
           <Table>
             <TableHead>
               <TableRow>
@@ -331,6 +355,42 @@ export function AdminOrderDetailPage() {
             </TableBody>
           </Table>
         </TableContainer>
+        </Box>
+
+        {/* Internal notes / comments */}
+        <Typography variant="h6" fontWeight={700} mb={2}>Internal Notes</Typography>
+        <Paper sx={{ p: 3, mb: 3, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+          <TextField
+            multiline
+            minRows={4}
+            maxRows={12}
+            fullWidth
+            placeholder="Add internal notes or comments about this order…"
+            value={notesText}
+            onChange={e => setNotesText(e.target.value)}
+            inputProps={{ maxLength: 5000 }}
+            sx={{ mb: 2 }}
+          />
+          {notesError && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setNotesError(null)}>
+              {notesError}
+            </Alert>
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={savingNotes ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+              onClick={handleSaveNotes}
+              disabled={savingNotes}
+            >
+              {savingNotes ? 'Saving…' : 'Save Notes'}
+            </Button>
+            {notesSaved && (
+              <Typography variant="caption" color="success.main">Saved!</Typography>
+            )}
+          </Box>
+        </Paper>
 
         <Link component={RouterLink} to="/admin/orders">Back to Orders</Link>
       </Box>

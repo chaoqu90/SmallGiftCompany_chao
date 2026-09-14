@@ -246,6 +246,338 @@
 
 ---
 
+## Wave 3 — Backend: admin generated-bundles router (new)
+
+### T15 — Zod schema: PatchBundleItemRequestSchema in dtos.ts
+- **Status:** `[x]` completed
+- **Owner:** backend
+- **Depends on:** —
+- **Requirements:** AC-FP-C.6
+- **Description:**
+  Append to `backend-node/src/types/dtos.ts`:
+  ```typescript
+  export const PatchBundleItemRequestSchema = z.object({
+    productId: z.number().int().positive(),
+  });
+  ```
+  Follow the existing coding style in the file. This schema is used by the new admin `generatedBundles` router (T16).
+
+### T16 — Repository additions: generatedBundles.ts + products.ts
+- **Status:** `[x]` completed
+- **Owner:** backend
+- **Depends on:** —
+- **Requirements:** AC-FP-C.3, AC-FP-C.6
+- **Description:**
+  **In `backend-node/src/repositories/generatedBundles.ts`**, add one new exported function:
+  ```typescript
+  patchBundleItem(
+    bundlePublicId: string,
+    slotCode: string,
+    product: ProductRow,
+  ): Promise<void>
+  ```
+  Issues an `UPDATE generated_bundle_item SET product_id = $productId, product_name_snapshot = $name, sku_snapshot = $sku, cost_snapshot = $cost, description_snapshot = $description, form_factor_snapshot = $formFactor WHERE generated_bundle_id = (SELECT id FROM generated_bundle WHERE public_id = $bundlePublicId) AND slot_code = $slotCode`. Uses postgres.js tagged-template SQL (no ORM).
+
+  **In `backend-node/src/repositories/products.ts`**, add one new exported function:
+  ```typescript
+  findEligibleAlternativesForSlot(
+    formFactor: string,
+    excludeProductIds: number[],
+  ): Promise<ProductRow[]>
+  ```
+  Query: `SELECT * FROM product WHERE form_factor = $formFactor AND active = true AND inventory_quantity > 0 AND id NOT IN ($...excludeProductIds) ORDER BY name`. Age, audience, and occasion filters are intentionally omitted (admin override — AC-FP-C.3). Handle the edge case where `excludeProductIds` is empty (avoid `NOT IN ()` syntax error).
+
+### T17 — New admin router: src/routes/admin/generatedBundles.ts
+- **Status:** `[x]` completed
+- **Owner:** backend
+- **Depends on:** T15, T16
+- **Requirements:** AC-FP-C.3, AC-FP-C.5, AC-FP-C.6, AC-FP-C.8, AC-FP-C.9, AC7.2, AC7.3
+- **Description:**
+  Create `backend-node/src/routes/admin/generatedBundles.ts`. Apply `basicAuth` at router level. Export as `adminGeneratedBundlesRouter`.
+
+  **GET `/:bundlePublicId/items/:slotCode/alternatives`**
+  Handler logic (design.md §3.8):
+  1. Fetch the bundle using the existing `generatedBundleService.getByPublicId(bundlePublicId)` — return 404 ProblemDetail if not found.
+  2. Find the `generated_bundle_item` row for `slotCode` within the bundle — return 404 ProblemDetail if the slot does not exist.
+  3. Collect all `product_id` values of currently selected items in the bundle (to exclude them from results).
+  4. Call `productsRepo.findEligibleAlternativesForSlot(formFactor, excludeProductIds)`.
+  5. Map each `ProductRow` to `AlternativeProductDto` `{ id, name, sku, formFactor, retailPrice }` and return 200.
+
+  **PATCH `/:bundlePublicId/items/:slotCode`**
+  Handler logic (design.md §3.8):
+  1. Parse body with `PatchBundleItemRequestSchema`.
+  2. Fetch bundle via `generatedBundleService.getByPublicId(bundlePublicId)` — return 404 if not found.
+  3. Find the `generated_bundle_item` row for `slotCode` — return 404 if the slot does not exist.
+  4. Fetch the requested product via `productsRepo.findById(productId)` — return 400 ProblemDetail if not found, not active (`active !== true`), or `inventory_quantity < 1`.
+  5. Validate `product.form_factor === item.form_factor_snapshot` — return 400 ProblemDetail (`detail: 'Product form factor does not match slot.'`) if mismatch.
+  6. Call `generatedBundlesRepo.patchBundleItem(bundlePublicId, slotCode, product)`.
+  7. Re-fetch the bundle with `generatedBundleService.getByPublicId(bundlePublicId)` and return 200 with the full `GeneratedBundleResponse` (same shape as `GET /api/generated-bundles/:publicId`).
+
+  All error responses must conform to the RFC 7807 ProblemDetail shape used throughout the backend.
+
+### T18 — Register adminGeneratedBundlesRouter in app.ts
+- **Status:** `[x]` completed
+- **Owner:** backend
+- **Depends on:** T17
+- **Requirements:** AC7.2, AC7.3
+- **Description:**
+  Modify `backend-node/src/app.ts`:
+  1. Add import: `import { adminGeneratedBundlesRouter } from './routes/admin/generatedBundles.js';`
+  2. Inside `createApp()`, before `app.use(errorHandler)`, add:
+     `app.use('/admin/api/generated-bundles', adminGeneratedBundlesRouter);`
+  Place this line adjacent to the existing `adminFuturePartiesRouter` registration for readability.
+  Do not change any existing routes.
+
+---
+
+## Wave 3 — Frontend: admin panel updates
+
+### T19 — Admin API additions: AlternativeProductDto, GeneratedBundleResponse, getAlternativesForSlot, patchBundleItem
+- **Status:** `[x]` completed
+- **Owner:** frontend
+- **Depends on:** —
+- **Requirements:** AC-FP-C.3, AC-FP-C.5, AC-FP-C.7
+- **Description:**
+  Modify `frontend/src/api/admin.ts`:
+  1. Add `AlternativeProductDto` interface:
+     ```typescript
+     export interface AlternativeProductDto {
+       id:          number;
+       name:        string;
+       sku:         string;
+       formFactor:  string;
+       retailPrice: string;
+     }
+     ```
+  2. Import or re-export `GeneratedBundleResponse` from `../types/catalog` so it is available in admin API calls. (If already imported in admin.ts, skip this step.)
+  3. Add two methods to the `adminApi` object:
+     ```typescript
+     getAlternativesForSlot: (auth: string, bundlePublicId: string, slotCode: string) =>
+       adminRequest<AlternativeProductDto[]>(
+         `/admin/api/generated-bundles/${bundlePublicId}/items/${slotCode}/alternatives`, auth,
+       ),
+
+     patchBundleItem: (auth: string, bundlePublicId: string, slotCode: string, productId: number) =>
+       adminRequest<GeneratedBundleResponse>(
+         `/admin/api/generated-bundles/${bundlePublicId}/items/${slotCode}`, auth, {
+           method: 'PATCH',
+           body: JSON.stringify({ productId }),
+         },
+       ),
+     ```
+  Follow the existing `adminRequest<T>` style in the file.
+
+### T20 — AdminFuturePartiesPage: update columns and actions
+- **Status:** `[x]` completed
+- **Owner:** frontend
+- **Depends on:** T19
+- **Requirements:** R4 (AC4.4), R5 (AC5.1, AC5.8), R-FP-B (AC-FP-B.1 – AC-FP-B.5)
+- **Description:**
+  Modify `frontend/src/pages/admin/AdminFuturePartiesPage.tsx` (the existing completed file at T14):
+
+  **State additions (design.md §5.2):**
+  - Add `applyDialogOpen: boolean` (initially `false`).
+  - Add `applyRow: AdminFutureParty | null` (initially `null`).
+
+  **Table header changes (AC4.4, AC-FP-B.1, AC-FP-B.2):**
+  - Remove the `<TableCell><strong>Code</strong></TableCell>` column header.
+  - Replace it with `<TableCell><strong>Generated Bundle Number</strong></TableCell>`.
+  - Update the `colSpan` on the empty-state row from `8` to `8` (column count stays the same — one column replaces another).
+
+  **Table body changes — "Code" cell → "Generated Bundle Number" cell (AC-FP-B.1, AC-FP-B.2):**
+  - Remove the entire `<TableCell>` block that renders `row.redemptionCode` and the "Redeemed" chip.
+  - Replace it with:
+    ```tsx
+    <TableCell>
+      {row.linkedBundlePublicId
+        ? <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{row.linkedBundlePublicId}</Typography>
+        : '—'}
+    </TableCell>
+    ```
+
+  **Actions column changes (AC-FP-B.3, AC-FP-B.4, AC-FP-B.5, AC5.1, AC5.8):**
+  Replace the current actions logic with the following pattern:
+  ```
+  if (row.linkedBundlePublicId !== null):
+    "View Bundle" button → navigate(`/admin/bundle-preview/${row.linkedBundlePublicId}?futurePartyId=${row.id}`)
+    [Send Link / Re-send controls — unchanged from T14 implementation]
+  else:
+    "Generate Bundle" button → sets selectedRow and generateDialogOpen=true
+    "Apply Bundle" button → sets applyRow and applyDialogOpen=true
+  ```
+  Rename the existing `dialogOpen` state to `generateDialogOpen` (and update all references) to distinguish it from `applyDialogOpen`. Import `useNavigate` from `react-router-dom`.
+
+  **onLinked navigation (AC5.4, AC5.6, design.md §5.7):**
+  Update the `onLinked` callback passed to `CreateBundleForFuturePartyDialog` so that after replacing the row in state, it also navigates to `/admin/bundle-preview/${updated.linkedBundlePublicId}?futurePartyId=${updated.id}` instead of staying on the list.
+
+  **ApplyBundleDialog wiring:**
+  Render `<ApplyBundleDialog>` below `<CreateBundleForFuturePartyDialog>`:
+  ```tsx
+  <ApplyBundleDialog
+    open={applyDialogOpen}
+    submission={applyRow}
+    authHeader={authHeader ?? ''}
+    onClose={() => { setApplyDialogOpen(false); setApplyRow(null) }}
+    onApplied={updated => {
+      setSubmissions(prev => prev.map(s => s.id === updated.id ? updated : s))
+      setApplyDialogOpen(false)
+      setApplyRow(null)
+    }}
+  />
+  ```
+  Import `ApplyBundleDialog` from `./ApplyBundleDialog`.
+
+### T21 — New component: ApplyBundleDialog.tsx
+- **Status:** `[x]` completed
+- **Owner:** frontend
+- **Depends on:** T11
+- **Requirements:** R5 (AC5.8)
+- **Description:**
+  Create `frontend/src/pages/admin/ApplyBundleDialog.tsx` as specified in design.md §5.4.
+
+  **Props:**
+  ```typescript
+  interface Props {
+    open:       boolean;
+    submission: AdminFutureParty | null;
+    authHeader: string;
+    onClose:    () => void;
+    onApplied:  (updated: AdminFutureParty) => void;
+  }
+  ```
+
+  **State:**
+  ```typescript
+  bundlePublicId: string   // controlled text input, initially ''
+  submitting:     boolean
+  error:          string | null
+  ```
+
+  **Submit flow (AC5.8):**
+  1. Validate `bundlePublicId.trim()` is non-empty; if empty, set `error` and return.
+  2. Set `submitting = true`, clear `error`.
+  3. Call `adminApi.linkBundleToFutureParty(authHeader, submission.id, bundlePublicId.trim())`.
+  4. On 200: call `onApplied(updatedRow)` and reset state.
+  5. On error: extract error `detail` from the response body (ProblemDetail shape) and set `error`.
+  6. Finally: `submitting = false`.
+
+  **Reset on close:** clear `bundlePublicId`, `error`, call `onClose()`. Guard: no-op if `submitting`.
+
+  **Dialog structure (MUI):**
+  ```
+  Dialog (maxWidth="xs", fullWidth)
+    DialogTitle — "Apply Existing Bundle"
+    DialogContent
+      Typography — "Enter the bundle number to associate with this submission."
+      TextField (label="Bundle Number", fullWidth, value=bundlePublicId, onChange=..., disabled=submitting)
+      [error] Alert severity="error" sx={{ mt: 1 }}
+    DialogActions
+      Button "Cancel" → handleClose (disabled=submitting)
+      Button "Apply" (variant="contained") → handleSubmit
+        disabled when submitting or bundlePublicId.trim() === ''
+        shows CircularProgress size=16 when submitting
+  ```
+
+### T22 — New page: AdminBundlePreviewPage.tsx
+- **Status:** `[x]` completed
+- **Owner:** frontend
+- **Depends on:** T19
+- **Requirements:** R-FP-A (AC-FP-A.1 – AC-FP-A.6), R-FP-C (AC-FP-C.1 – AC-FP-C.9)
+- **Description:**
+  Create `frontend/src/pages/admin/AdminBundlePreviewPage.tsx` as specified in design.md §5.5.
+  This is a NEW component — `BundleCustomizationPage` MUST NOT be modified (Key Constraint #9).
+
+  **Route params:** `bundlePublicId` from `useParams`, `futurePartyId` from `useSearchParams`. If either is missing, redirect to `/admin/future-parties`.
+
+  **State (design.md §5.5):**
+  ```typescript
+  bundle:        GeneratedBundleResponse | null
+  loading:       boolean
+  error:         string | null
+  sending:       boolean
+  sendError:     string | null
+  sentAt:        string | null
+  // Swap modal:
+  swapSlotCode:  string | null      // null = modal closed
+  swapSlotName:  string
+  alternatives:  AlternativeProductDto[]
+  altLoading:    boolean
+  altError:      string | null
+  selectedAltId: number | null
+  swapping:      boolean
+  swapError:     string | null
+  ```
+
+  **Data loading (AC-FP-A.2):**
+  On mount, fetch `GET /api/generated-bundles/:bundlePublicId` (public endpoint — no auth). Render `ConfiguratorVisual`, item cards (with swap icon per item — AC-FP-C.1), upgrade options, and gift bag options matching the layout of `BundleCustomizationPage`. Import `ConfiguratorVisual`, `IncludedItemCard`, `OptionCard` from their existing locations.
+
+  **Top bar (AC-FP-A.5):**
+  Sticky top bar with a "Back to Future Parties" button (ArrowBackIcon) that navigates to `/admin/future-parties`. No price display.
+
+  **Item swap icon (AC-FP-C.1, AC-FP-C.2):**
+  Each item card in the "Included" section has a `SwapHorizIcon` `IconButton` overlaid at the top-right. Clicking it sets `swapSlotCode` and `swapSlotName`, triggering the swap modal to open.
+
+  **Swap modal open effect (design.md §5.5):**
+  When `swapSlotCode` becomes non-null, fetch `adminApi.getAlternativesForSlot(authHeader, bundlePublicId, swapSlotCode)`. Set `altLoading`, `alternatives`, `altError` accordingly.
+
+  **Swap modal (AC-FP-C.2 – AC-FP-C.9):**
+  ```
+  Dialog (maxWidth="sm", fullWidth)
+    DialogTitle — "Replace [swapSlotName]"
+    DialogContent
+      [altLoading]              CircularProgress
+      [altError]                Alert severity="error"
+      [alternatives.length===0] Typography "No alternative products are available for this slot."
+      [alternatives.length>0]   List of cards: name, SKU, form factor, retail price.
+                                Clicking a card sets selectedAltId. Selected card gets highlighted border.
+      [swapError]               Alert severity="error"
+    DialogActions
+      Button "Cancel"  → close modal, reset selectedAltId and swapError
+      Button "Replace" → handleSwapConfirm (disabled if selectedAltId===null or swapping)
+        shows CircularProgress size=16 when swapping
+  ```
+
+  **handleSwapConfirm:**
+  1. Set `swapping = true`.
+  2. Call `adminApi.patchBundleItem(authHeader, bundlePublicId, swapSlotCode, selectedAltId)`.
+  3. On 200: set `bundle` to the returned response; close modal (set `swapSlotCode = null`, reset `selectedAltId`, `swapError`).
+  4. On error: set `swapError`.
+  5. Finally: `swapping = false`.
+
+  **Sticky bottom CTA bar (AC-FP-A.3, AC-FP-A.4):**
+  No quantity selector, no price breakdown. Right side:
+  - If `sentAt !== null`, show `Typography "Sent [formatted sentAt]"`.
+  - Button "Send Link" (if `sentAt === null`) or "Re-send" (if `sentAt !== null`), `variant="contained"`, `color="primary"`.
+  - While `sending`, show `CircularProgress size=16` inside the button and disable it.
+  - If `sendError`, show `Alert severity="error"` near the button.
+
+  **handleSendLink:**
+  1. Set `sending = true`, clear `sendError`.
+  2. Call `adminApi.sendFuturePartyLink(authHeader, Number(futurePartyId))`.
+  3. On 200: set `sentAt = response.sentAt`.
+  4. On error: set `sendError` from response detail.
+  5. Finally: `sending = false`.
+
+  **Loading and error states (AC-FP-A.6):**
+  - While loading: centered `CircularProgress`.
+  - On error: `Alert severity="error"` with "Bundle not found." and a "Back to Future Parties" link.
+
+### T23 — Register AdminBundlePreviewPage route in App.tsx
+- **Status:** `[x]` completed
+- **Owner:** frontend
+- **Depends on:** T22
+- **Requirements:** AC-FP-A.1, AC7.2
+- **Description:**
+  Modify `frontend/src/App.tsx`:
+  1. Add import: `import { AdminBundlePreviewPage } from './pages/admin/AdminBundlePreviewPage';`
+  2. Inside the `<AdminGuard />` block, add after the `/admin/future-parties` route:
+     ```tsx
+     <Route path="/admin/bundle-preview/:bundlePublicId" element={<AdminBundlePreviewPage />} />
+     ```
+  No new nav link is needed — the page is reached via "View Bundle" and "Generate Bundle" navigation only.
+
+---
+
 ## Dependency graph
 
 ```
@@ -276,6 +608,23 @@ T12 (AdminNav) [independent]                               │
                                                             │
                                                             ▼
                                                     T14 (AdminFuturePartiesPage + App.tsx route)
+
+T15 (PatchBundleItemRequestSchema) ─────────────────────┐
+T16 (repo: patchBundleItem + findEligibleAlternatives) ──┤
+                                                         ▼
+                                                 T17 (admin/generatedBundles.ts router)
+                                                         │
+                                                         ▼
+                                                 T18 (register in app.ts)
+
+T19 (admin.ts: AlternativeProductDto + new API methods) ─────────────────┐
+T21 (ApplyBundleDialog) [depends on T11]                                  │
+                                                                          ▼
+                                                               T20 (AdminFuturePartiesPage updates)
+                                                               T22 (AdminBundlePreviewPage) [depends on T19]
+                                                                          │
+                                                                          ▼
+                                                               T23 (App.tsx: bundle-preview route)
 ```
 
 ---
@@ -293,3 +642,9 @@ T12 (AdminNav) [independent]                               │
 | 3b | T10 (after T9) | Frontend |
 | 3c | T13 (after T11) | Frontend |
 | 4 | T14 (after T11+T12+T13) | Frontend |
+| 5a | T15, T16 (backend — independent) | Yes — both independent |
+| 5b | T19, T21 (frontend — independent of each other) | Yes |
+| 6a | T17 (after T15+T16) | Backend |
+| 6b | T20 (after T19+T21), T22 (after T19) | Frontend — can run in parallel |
+| 7a | T18 (after T17) | Backend |
+| 7b | T23 (after T22) | Frontend |
