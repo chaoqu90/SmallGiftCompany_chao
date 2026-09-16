@@ -20,7 +20,6 @@ import {
   lookupSkuProducts,
   importFair,
   listFairs,
-  findFairById,
   getFairAnalytics,
   type ImportSaleInput,
   type InventoryUpdate,
