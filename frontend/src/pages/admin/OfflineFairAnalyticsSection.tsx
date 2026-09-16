@@ -129,7 +129,7 @@ export function OfflineFairAnalyticsSection({ refreshTrigger }: { refreshTrigger
         >
           {fairs.map(f => (
             <MenuItem key={f.id} value={f.id}>
-              {f.name} — {formatDate(f.fairDate)}
+              {f.name}
             </MenuItem>
           ))}
         </Select>
