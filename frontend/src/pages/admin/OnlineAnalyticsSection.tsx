@@ -13,7 +13,6 @@ import {
   Alert,
   Box,
   Button,
-  ButtonGroup,
   CircularProgress,
   Paper,
   TextField,
@@ -126,13 +125,15 @@ export function OnlineAnalyticsSection() {
     <Box>
       {/* Preset selector */}
       <Box sx={{ mb: 3 }}>
-        <ButtonGroup variant="outlined" size="small" sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           {PRESETS.map(p => (
-            <Button key={p.value} variant={preset === p.value ? 'contained' : 'outlined'} onClick={() => setPreset(p.value)}>
+            <Button key={p.value} size="small"
+              variant={preset === p.value ? 'contained' : 'outlined'}
+              onClick={() => setPreset(p.value)}>
               {p.label}
             </Button>
           ))}
-        </ButtonGroup>
+        </Box>
 
         {preset === 'custom' && (
           <Box sx={{ display: 'flex', gap: 2, mt: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>

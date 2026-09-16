@@ -119,7 +119,7 @@ export function OfflineFairAnalyticsSection({ refreshTrigger }: { refreshTrigger
   return (
     <Box>
       {/* Fair selector */}
-      <FormControl sx={{ minWidth: 360, mb: 3 }}>
+      <FormControl sx={{ minWidth: { xs: '100%', sm: 360 }, mb: 3 }}>
         <InputLabel id="fair-select-label">Select Fair</InputLabel>
         <Select
           labelId="fair-select-label"

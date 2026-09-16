@@ -127,7 +127,7 @@ interface StatCardProps { label: string; value: number }
 
 function StatCard({ label, value }: StatCardProps) {
   return (
-    <Paper sx={{ p: 4, minWidth: 200, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+    <Paper sx={{ p: { xs: 2, md: 4 }, minWidth: 140, flex: 1, boxShadow: '0 2px 8px rgba(0,0,0,0.06)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
       <Typography sx={{ fontSize: '3rem', fontWeight: 700, lineHeight: 1, color: '#1D1D1F' }}>
         {value.toLocaleString()}
       </Typography>
@@ -365,7 +365,8 @@ export function AdminDashboardPage() {
         <Typography variant="h5" sx={{ mb: 3, fontWeight: 700 }}>Dashboard</Typography>
 
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-          <Tabs value={tab} onChange={(_, v) => setTab(v)} aria-label="Dashboard tabs">
+          <Tabs value={tab} onChange={(_, v) => setTab(v)} aria-label="Dashboard tabs"
+            variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
             <Tab label="Overview"     />
             <Tab label="Offline Fair" />
             <Tab label="Online"       />
