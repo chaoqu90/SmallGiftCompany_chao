@@ -155,7 +155,7 @@ export function OfflineFairImportForm({ onImportSuccess }: { onImportSuccess?: (
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <Box>
+    <Box sx={{ width: '100%' }}>
       <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
         Import Offline Fair
       </Typography>
@@ -178,8 +178,8 @@ export function OfflineFairImportForm({ onImportSuccess }: { onImportSuccess?: (
           </Button>
         </Box>
       ) : (
-        <Box component="form" onSubmit={handleSubmit} noValidate>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: 480 }}>
+        <Box component="form" onSubmit={handleSubmit} noValidate sx={{ width: '100%' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, maxWidth: { xs: '100%', sm: 480 } }}>
             {/* Fair Name */}
             <TextField
               label="Fair Name"
@@ -217,7 +217,7 @@ export function OfflineFairImportForm({ onImportSuccess }: { onImportSuccess?: (
                 accept=".xlsx"
                 onChange={handleFileChange}
                 disabled={submitting}
-                style={{ display: 'block', marginBottom: 4 }}
+                style={{ display: 'block', marginBottom: 4, maxWidth: '100%' }}
               />
               {fileError && (
                 <Typography variant="caption" color="error">{fileError}</Typography>
