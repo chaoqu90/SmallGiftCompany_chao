@@ -16,6 +16,7 @@
     "@emotion/styled": "^11.0.0",
     "@mui/icons-material": "^6.0.0",
     "@mui/material": "^6.0.0",
+    "@mui/x-charts": "^7.29.1",
     "@stripe/react-stripe-js": "^6.8.2",
     "@stripe/stripe-js": "^9.15.0",
     "@supabase/supabase-js": "^2.112.4",

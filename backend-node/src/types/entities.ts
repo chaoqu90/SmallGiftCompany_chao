@@ -251,6 +251,33 @@ export interface AnalyticsEventRow {
   created_at: Date;
 }
 
+// ─── offline_fair ─────────────────────────────────────────────────────────────
+
+export interface OfflineFairRow {
+  id: number;
+  name: string;
+  fair_date: string;           // DATE returned as string by postgres.js
+  location: string | null;
+  notes: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ─── offline_fair_sale ────────────────────────────────────────────────────────
+
+export interface OfflineFairSaleRow {
+  id: number;
+  offline_fair_id: number;
+  product_id: number | null;   // NULL when product has been deleted
+  sku_snapshot: string;
+  product_name_snapshot: string;
+  quantity_sold: number;       // SMALLINT
+  unit_price: string;          // NUMERIC(10,2) — postgres.js returns as string
+  line_total: string;          // NUMERIC(10,2)
+  notes: string | null;
+  created_at: Date;
+}
+
 // ─── Affinity maps (in-memory index built from batch-loaded rows) ────────────
 
 /**

@@ -238,3 +238,102 @@ export const LinkBundleRequestSchema = z.object({
 export const PatchBundleItemRequestSchema = z.object({
   productId: z.coerce.number().int().positive(),
 });
+
+// ─── Analytics — Offline Fair (FEAT-006) ─────────────────────────────────────
+
+/** One entry in the top-5 ranked lists for offline fair analytics */
+export interface FairTopByQuantityItem {
+  sku: string;
+  productName: string;
+  quantitySold: number;
+}
+
+export interface FairTopByProfitItem {
+  sku: string;
+  productName: string;
+  profit: number;
+}
+
+/** Response shape for GET /admin/api/offline-fairs/:id/analytics */
+export interface OfflineFairAnalyticsDto {
+  fairId: number;
+  fairName: string;
+  fairDate: string;
+  totalUnitsSold: number;
+  grossIncome: number;
+  netIncome: number;
+  topByQuantity: FairTopByQuantityItem[];
+  topByProfit: FairTopByProfitItem[];
+}
+
+/** One item in the GET /admin/api/offline-fairs list */
+export interface OfflineFairListItemDto {
+  id: number;
+  name: string;
+  fairDate: string;
+  createdAt: Date;
+}
+
+/** Success response for POST /admin/api/offline-fairs/import */
+export interface OfflineFairImportResultDto {
+  fairId: number;
+  fairName: string;
+  fairDate: string;
+  saleRowsCreated: number;
+  skusProcessed: number;
+  inventoryUpdated: number;
+  warnings: string[];
+}
+
+// ─── Analytics — Online Shopping (FEAT-006) ───────────────────────────────────
+
+export interface OnlineTopByUnitsItem {
+  sku: string;
+  productName: string;
+  unitsSold: number;
+}
+
+export interface OnlineTopByProfitItem {
+  sku: string;
+  productName: string;
+  estimatedProfit: number;
+}
+
+/** Response shape for GET /admin/api/analytics/online */
+export interface OnlineAnalyticsDto {
+  dateFrom: string;
+  dateTo: string;
+  totalUnitsSold: number;
+  grossIncome: number;
+  netIncome: number;
+  topByUnits: OnlineTopByUnitsItem[];
+  topByProfit: OnlineTopByProfitItem[];
+}
+
+// ─── Analytics — Inventory Insights (FEAT-006) ───────────────────────────────
+
+export type InventoryUrgency = 'CRITICAL' | 'VERY_LOW' | 'LOW';
+
+export interface LowStockProductDto {
+  productId: number;
+  sku: string;
+  name: string;
+  inventoryQuantity: number;
+  urgency: InventoryUrgency;
+}
+
+export interface FastMovingProductDto {
+  productId: number;
+  sku: string;
+  name: string;
+  unitsSoldLast30Days: number;
+  inventoryQuantity: number;
+}
+
+/** Response shape for GET /admin/api/analytics/inventory */
+export interface InventoryInsightsDto {
+  lowStock: LowStockProductDto[];
+  fastMoving: FastMovingProductDto[];
+  lowStockThreshold: number;
+  fastMovingWindowDays: number;
+}

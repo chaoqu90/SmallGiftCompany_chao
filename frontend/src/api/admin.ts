@@ -175,6 +175,99 @@ export interface AdminFutureParty {
   redeemedAt:           string | null
 }
 
+// ─── Analytics — Offline Fair (FEAT-006) ─────────────────────────────────────
+
+export interface OfflineFairImportResult {
+  fairId:           number
+  fairName:         string
+  fairDate:         string
+  saleRowsCreated:  number
+  skusProcessed:    number
+  inventoryUpdated: number
+  warnings:         string[]
+}
+
+export interface OfflineFairListItem {
+  id:        number
+  name:      string
+  fairDate:  string
+  createdAt: string
+}
+
+export interface FairTopByQuantityItem {
+  sku:          string
+  productName:  string
+  quantitySold: number
+}
+
+export interface FairTopByProfitItem {
+  sku:         string
+  productName: string
+  profit:      number
+}
+
+export interface OfflineFairAnalytics {
+  fairId:         number
+  fairName:       string
+  fairDate:       string
+  totalUnitsSold: number
+  grossIncome:    number
+  netIncome:      number
+  topByQuantity:  FairTopByQuantityItem[]
+  topByProfit:    FairTopByProfitItem[]
+}
+
+// ─── Analytics — Online Shopping (FEAT-006) ───────────────────────────────────
+
+export interface OnlineTopByUnitsItem {
+  sku:         string
+  productName: string
+  unitsSold:   number
+}
+
+export interface OnlineTopByProfitItem {
+  sku:             string
+  productName:     string
+  estimatedProfit: number
+}
+
+export interface OnlineAnalytics {
+  dateFrom:       string
+  dateTo:         string
+  totalUnitsSold: number
+  grossIncome:    number
+  netIncome:      number
+  topByUnits:     OnlineTopByUnitsItem[]
+  topByProfit:    OnlineTopByProfitItem[]
+}
+
+// ─── Analytics — Inventory Insights (FEAT-006) ───────────────────────────────
+
+export type InventoryUrgency = 'CRITICAL' | 'VERY_LOW' | 'LOW'
+
+export interface LowStockProduct {
+  productId:         number
+  sku:               string
+  name:              string
+  inventoryQuantity: number
+  urgency:           InventoryUrgency
+}
+
+export interface FastMovingProduct {
+  productId:           number
+  sku:                 string
+  name:                string
+  unitsSoldLast30Days: number
+  inventoryQuantity:   number
+}
+
+export interface InventoryInsights {
+  lowStock:             LowStockProduct[]
+  fastMoving:           FastMovingProduct[]
+  lowStockThreshold:    number
+  fastMovingWindowDays: number
+}
+
 export const adminApi = {
   getProducts: (auth: string) =>
     adminRequest<AdminProduct[]>('/admin/api/products/', auth),
@@ -322,4 +415,52 @@ export const adminApi = {
     })
     if (!res.ok) throw new Error(`S3 upload failed: ${res.status}`)
   },
+
+  // ── Analytics & Offline Fair (FEAT-006) ─────────────────────────────────────
+
+  /**
+   * POST /admin/api/offline-fairs/import
+   *
+   * MUST use native fetch (NOT adminRequest) so the browser sets
+   * Content-Type: multipart/form-data with the correct boundary automatically.
+   * Design: §D.3 — importOfflineFair note
+   */
+  importOfflineFair: async (auth: string, formData: FormData): Promise<OfflineFairImportResult> => {
+    const res = await fetch(`${BASE_URL}/admin/api/offline-fairs/import`, {
+      method: 'POST',
+      headers: { 'Authorization': auth },
+      body: formData,
+    })
+    if (res.status === 401) throw new Error('UNAUTHORIZED')
+    if (!res.ok) {
+      let detail: string | undefined
+      try {
+        const body = await res.json() as { detail?: string; errors?: { row: number | null; message: string }[] }
+        // Prefer errors array for 422 responses; fall back to detail
+        if (body.errors && body.errors.length > 0) {
+          detail = body.errors.map(e => e.row != null ? `Row ${e.row}: ${e.message}` : e.message).join('\n')
+        } else {
+          detail = body.detail
+        }
+      } catch { /* ignore */ }
+      throw new Error(detail ?? `Import failed: ${res.status}`)
+    }
+    return res.json() as Promise<OfflineFairImportResult>
+  },
+
+  /** GET /admin/api/offline-fairs — list all fairs ordered by fair_date DESC */
+  listOfflineFairs: (auth: string) =>
+    adminRequest<OfflineFairListItem[]>('/admin/api/offline-fairs', auth),
+
+  /** GET /admin/api/offline-fairs/:id/analytics */
+  getOfflineFairAnalytics: (auth: string, id: number) =>
+    adminRequest<OfflineFairAnalytics>(`/admin/api/offline-fairs/${id}/analytics`, auth),
+
+  /** GET /admin/api/analytics/online?dateFrom=&dateTo= */
+  getOnlineAnalytics: (auth: string, dateFrom: string, dateTo: string) =>
+    adminRequest<OnlineAnalytics>(`/admin/api/analytics/online?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`, auth),
+
+  /** GET /admin/api/analytics/inventory */
+  getInventoryInsights: (auth: string) =>
+    adminRequest<InventoryInsights>('/admin/api/analytics/inventory', auth),
 }

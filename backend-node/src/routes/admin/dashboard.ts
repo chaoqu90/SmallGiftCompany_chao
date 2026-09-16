@@ -117,7 +117,62 @@ adminDashboardRouter.get(
         templatesByCode,
       });
 
-      res.json(coverageRecords);
+      // Step 6: Aggregate flat per-slot records into one row per product
+      // Total combinations = 3 ages × 5 interests × 3 audiences × 2 party types × N budget tiers
+      const totalCombinations = 3 * 5 * 3 * 2 * activeBudgetTiers.length;
+
+      type AggRow = {
+        productId: number;
+        name: string;
+        appearanceCount: number;
+        agesCovered: Set<string>;
+        audiencesCovered: Set<string>;
+        partyTypesCovered: Set<string>;
+        interestsCovered: Set<string>;
+        budgetsCovered: Set<string>;
+      };
+
+      const aggMap = new Map<number, AggRow>();
+      for (const r of coverageRecords) {
+        let agg = aggMap.get(r.productId);
+        if (!agg) {
+          agg = {
+            productId: r.productId,
+            name: r.productName,
+            appearanceCount: 0,
+            agesCovered: new Set(),
+            audiencesCovered: new Set(),
+            partyTypesCovered: new Set(),
+            interestsCovered: new Set(),
+            budgetsCovered: new Set(),
+          };
+          aggMap.set(r.productId, agg);
+        }
+        agg.appearanceCount += 1;
+        // Age stored as midpoint number; map to display range
+        const ageRange = r.age <= 5 ? '3-5' : r.age <= 8 ? '6-8' : '9-12';
+        agg.agesCovered.add(ageRange);
+        agg.audiencesCovered.add(r.audiencePreference);
+        agg.partyTypesCovered.add(r.partyType);
+        agg.interestsCovered.add(r.interest);
+        agg.budgetsCovered.add(r.budgetTierCode);
+      }
+
+      const aggregated = Array.from(aggMap.values())
+        .map(agg => ({
+          productId: agg.productId,
+          name: agg.name,
+          appearanceCount: agg.appearanceCount,
+          totalCombinations,
+          agesCovered: Array.from(agg.agesCovered),
+          audiencesCovered: Array.from(agg.audiencesCovered),
+          partyTypesCovered: Array.from(agg.partyTypesCovered),
+          interestsCovered: Array.from(agg.interestsCovered),
+          budgetsCovered: Array.from(agg.budgetsCovered),
+        }))
+        .sort((a, b) => a.appearanceCount - b.appearanceCount); // lowest coverage first
+
+      res.json(aggregated);
     } catch (err) {
       next(err);
     }

@@ -43,6 +43,10 @@ import { futurePartiesRouter }           from './routes/futureParties.js';
 import { adminFuturePartiesRouter }      from './routes/admin/futureParties.js';
 import { adminGeneratedBundlesRouter }   from './routes/admin/generatedBundles.js';
 
+// Analytics & Offline Fair routers (FEAT-006)
+import { adminOfflineFairsRouter } from './routes/admin/offline-fairs.js';
+import { adminAnalyticsRouter }    from './routes/admin/analytics.js';
+
 export function createApp() {
   const app = express();
 
@@ -80,6 +84,10 @@ export function createApp() {
   app.use('/api/future-parties',              futurePartiesRouter);             // public — no auth (AC7.1, AC7.3)
   app.use('/admin/api/future-parties',        adminFuturePartiesRouter);        // basicAuth inside router (AC7.2, AC7.3)
   app.use('/admin/api/generated-bundles',     adminGeneratedBundlesRouter);     // basicAuth inside router (AC7.2, AC7.3)
+
+  // ── Analytics & Offline Fair routes (FEAT-006) ────────────────────────────
+  app.use('/admin/api/offline-fairs', adminOfflineFairsRouter);  // basicAuth inside router
+  app.use('/admin/api/analytics',     adminAnalyticsRouter);     // basicAuth inside router
 
   // ── Error handler (MUST be last) ─────────────────────────────────────────
   app.use(errorHandler);
