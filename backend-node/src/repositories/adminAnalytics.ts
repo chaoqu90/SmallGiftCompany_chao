@@ -84,7 +84,7 @@ export async function getOnlineAnalytics(
       AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
     GROUP BY gbi.product_id, gbi.sku_snapshot, gbi.product_name_snapshot
     ORDER BY SUM(oli.quantity * gbi.quantity_per_bag) DESC
-    LIMIT 5
+    LIMIT 10
   `;
 
   // Top 5 by estimated profit per product.
@@ -131,7 +131,7 @@ export async function getOnlineAnalytics(
       (line_total / NULLIF(slot_count, 0))
       - (cost_per_unit * quantity * quantity_per_bag)
     ) DESC
-    LIMIT 5
+    LIMIT 10
   `;
 
   const topByUnits: OnlineTopByUnitsItem[] = topByUnitsRows.map(r => ({

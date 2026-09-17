@@ -64,7 +64,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <Paper sx={{ flex: 1, minWidth: 300, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <Paper sx={{ flex: '1 1 300px', minWidth: 280, maxWidth: 480, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       <Typography variant="subtitle1" fontWeight={700} mb={subtitle ? 0.25 : 1}>{title}</Typography>
       {subtitle && <Typography sx={{ fontSize: '0.72rem', color: '#6E6E73', mb: 1 }}>{subtitle}</Typography>}
       {children}
@@ -202,7 +202,7 @@ export function OnlineAnalyticsSection() {
                   series={[{
                     data: analytics.topByProfit.map(r => r.estimatedProfit),
                     label: 'Est. Profit ($)',
-                    color: '#4CAF50',
+                    color: '#00897B',
                     valueFormatter: (v) => formatCurrency(v ?? 0),
                   }]}
                   margin={{ left: 130, right: 20, top: 10, bottom: 30 }}

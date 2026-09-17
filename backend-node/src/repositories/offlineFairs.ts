@@ -232,7 +232,7 @@ export async function getFairAnalytics(fairId: number): Promise<OfflineFairAnaly
     WHERE offline_fair_id = ${fairId}
     GROUP BY sku_snapshot, product_name_snapshot
     ORDER BY SUM(quantity_sold) DESC
-    LIMIT 5
+    LIMIT 10
   `;
 
   // Top by profit
@@ -262,7 +262,7 @@ export async function getFairAnalytics(fairId: number): Promise<OfflineFairAnaly
                ELSE 0
           END
         )) DESC
-    LIMIT 5
+    LIMIT 10
   `;
 
   const topByQuantity: FairTopByQuantityItem[] = topByQuantityRows.map(r => ({

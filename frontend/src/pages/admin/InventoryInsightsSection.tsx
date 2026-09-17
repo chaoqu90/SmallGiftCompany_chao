@@ -95,7 +95,7 @@ export function InventoryInsightsSection() {
             ) : (
               <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 {/* Bar chart */}
-                <Paper sx={{ flex: 1, minWidth: 280, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <Paper sx={{ flex: '1 1 280px', minWidth: 260, maxWidth: 460, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <BarChart
                     layout="horizontal"
                     height={Math.max(180, data.lowStock.length * 36 + 50)}
@@ -159,7 +159,7 @@ export function InventoryInsightsSection() {
             ) : (
               <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 {/* Bar chart */}
-                <Paper sx={{ flex: 1, minWidth: 280, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <Paper sx={{ flex: '1 1 280px', minWidth: 260, maxWidth: 460, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
                   <BarChart
                     layout="horizontal"
                     height={Math.max(180, data.fastMoving.length * 36 + 50)}

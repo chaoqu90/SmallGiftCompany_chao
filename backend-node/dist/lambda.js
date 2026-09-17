@@ -134950,7 +134950,7 @@ async function getFairAnalytics(fairId) {
     WHERE offline_fair_id = ${fairId}
     GROUP BY sku_snapshot, product_name_snapshot
     ORDER BY SUM(quantity_sold) DESC
-    LIMIT 5
+    LIMIT 10
   `;
   const topByProfitRows = await sql`
     SELECT
@@ -134974,7 +134974,7 @@ async function getFairAnalytics(fairId) {
                ELSE 0
           END
         )) DESC
-    LIMIT 5
+    LIMIT 10
   `;
   const topByQuantity = topByQuantityRows.map((r5) => ({
     sku: r5.sku_snapshot,
@@ -135249,7 +135249,7 @@ async function getOnlineAnalytics(dateFrom, dateTo) {
       AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
     GROUP BY gbi.product_id, gbi.sku_snapshot, gbi.product_name_snapshot
     ORDER BY SUM(oli.quantity * gbi.quantity_per_bag) DESC
-    LIMIT 5
+    LIMIT 10
   `;
   const topByProfitRows = await sql`
     WITH bundle_slot_counts AS (
@@ -135288,7 +135288,7 @@ async function getOnlineAnalytics(dateFrom, dateTo) {
       (line_total / NULLIF(slot_count, 0))
       - (cost_per_unit * quantity * quantity_per_bag)
     ) DESC
-    LIMIT 5
+    LIMIT 10
   `;
   const topByUnits = topByUnitsRows.map((r5) => ({
     sku: r5.sku_snapshot,

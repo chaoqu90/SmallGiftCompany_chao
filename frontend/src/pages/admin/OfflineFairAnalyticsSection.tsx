@@ -54,7 +54,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <Paper sx={{ flex: 1, minWidth: 300, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+    <Paper sx={{ flex: 1, minWidth: 280, p: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
       <Typography variant="subtitle1" fontWeight={700} mb={1}>{title}</Typography>
       {children}
     </Paper>
@@ -155,10 +155,10 @@ export function OfflineFairAnalyticsSection({ refreshTrigger }: { refreshTrigger
                   }]}
                   series={[{
                     data: analytics.topByQuantity.map(r => r.quantitySold),
-                    label: 'Qty Sold',
                     color: '#F47F6B',
                   }]}
-                  margin={{ left: 130, right: 20, top: 10, bottom: 30 }}
+                  slotProps={{ legend: { hidden: true } }}
+                  margin={{ left: 130, right: 20, top: 10, bottom: 10 }}
                 />
               </ChartCard>
 
@@ -173,11 +173,11 @@ export function OfflineFairAnalyticsSection({ refreshTrigger }: { refreshTrigger
                   }]}
                   series={[{
                     data: analytics.topByProfit.map(r => r.profit),
-                    label: 'Profit ($)',
-                    color: '#4CAF50',
+                    color: '#00897B',
                     valueFormatter: (v) => formatCurrency(v ?? 0),
                   }]}
-                  margin={{ left: 130, right: 20, top: 10, bottom: 30 }}
+                  slotProps={{ legend: { hidden: true } }}
+                  margin={{ left: 130, right: 20, top: 10, bottom: 10 }}
                 />
               </ChartCard>
             </Box>
