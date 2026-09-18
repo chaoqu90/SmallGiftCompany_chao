@@ -38,6 +38,14 @@ export function BundleCustomizationPage() {
   const { addItem, refreshCart } = useCart()
 
   const viewTracked = useRef(false)
+  // Also persist in sessionStorage so remounts don't fire duplicate BUNDLE_VIEWED events
+  function markViewed(id: string) {
+    if (viewTracked.current) return
+    if (sessionStorage.getItem(`viewed:${id}`)) return
+    viewTracked.current = true
+    sessionStorage.setItem(`viewed:${id}`, '1')
+    trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId: id })
+  }
 
   const [bundle,    setBundle]    = useState<GeneratedBundleResponse | null>(null)
   const [loading,   setLoading]   = useState(true)
@@ -68,10 +76,7 @@ export function BundleCustomizationPage() {
           setBundle(parsed)
           setGiftBagOptionId(parsed.giftBag?.code ?? 'classic')
           setLoading(false)
-          if (!viewTracked.current) {
-            viewTracked.current = true
-            trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId })
-          }
+          markViewed(bundleId)
           return
         }
       } catch {
@@ -88,10 +93,7 @@ export function BundleCustomizationPage() {
         if (!cancelled) {
           setBundle(b)
           setGiftBagOptionId(b.giftBag?.code ?? 'classic')
-          if (!viewTracked.current) {
-            viewTracked.current = true
-            trackEvent({ eventType: 'BUNDLE_VIEWED', bundleId: bundleId ?? undefined })
-          }
+          markViewed(bundleId)
         }
       })
       .catch((e: { message?: string }) => {
