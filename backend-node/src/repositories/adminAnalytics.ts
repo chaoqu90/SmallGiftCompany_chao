@@ -22,6 +22,9 @@ import type {
   LowStockProductDto,
   FastMovingProductDto,
   InventoryUrgency,
+  OverviewAnalyticsDto,
+  OverviewTopItem,
+  OverviewProductRow,
 } from '../types/dtos.js';
 
 // Fixed business constants — not configurable from UI (design.md §C.5)
@@ -154,6 +157,154 @@ export async function getOnlineAnalytics(
     netIncome: Number(totals.net_income),
     topByUnits,
     topByProfit,
+  };
+}
+
+// ─── getCombinedOverviewAnalytics ─────────────────────────────────────────────
+
+/**
+ * Combined overview analytics — merges online orders and offline fair sales
+ * for the given inclusive date range.
+ *
+ * Online: customer_order.created_at in [dateFrom 00:00 UTC, dateTo 23:59:59 UTC]
+ * Offline: offline_fair.fair_date in [dateFrom, dateTo] (date-only comparison)
+ *
+ * Revenue attribution for online: prorated equally across bundle slots.
+ * COGS always divided by 6.5 (RMB → USD).
+ */
+export async function getCombinedOverviewAnalytics(
+  dateFrom: string,
+  dateTo: string,
+): Promise<OverviewAnalyticsDto> {
+
+  // Combined totals
+  const [totals] = await sql<{
+    total_units_sold: string;
+    gross_income: string;
+    net_income: string;
+  }[]>`
+    WITH online AS (
+      SELECT
+        COALESCE(SUM(oli.quantity * gbi.quantity_per_bag), 0)          AS units_sold,
+        COALESCE(SUM(oli.line_total), 0)                               AS gross_income,
+        COALESCE(SUM(gbi.cost_snapshot::numeric / 6.5 * oli.quantity * gbi.quantity_per_bag), 0) AS cogs
+      FROM customer_order co
+      JOIN order_line_item oli ON oli.customer_order_id = co.id
+      JOIN generated_bundle_item gbi ON gbi.generated_bundle_id = oli.generated_bundle_id
+      WHERE co.status = ANY(${QUALIFYING_STATUSES})
+        AND co.created_at >= (${dateFrom}::date)::timestamptz
+        AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
+    ),
+    offline AS (
+      SELECT
+        COALESCE(SUM(ofs.quantity_sold), 0)                            AS units_sold,
+        COALESCE(SUM(ofs.line_total), 0)                               AS gross_income,
+        COALESCE(SUM(
+          CASE WHEN ofs.product_id IS NOT NULL
+               THEN COALESCE(p.cog_adjusted, 0) / 6.5 * ofs.quantity_sold
+               ELSE 0 END
+        ), 0)                                                           AS cogs
+      FROM offline_fair_sale ofs
+      JOIN offline_fair f ON f.id = ofs.offline_fair_id
+      LEFT JOIN product p ON p.id = ofs.product_id
+      WHERE f.fair_date >= ${dateFrom}::date
+        AND f.fair_date <= ${dateTo}::date
+    )
+    SELECT
+      (online.units_sold + offline.units_sold)::text   AS total_units_sold,
+      (online.gross_income + offline.gross_income)::text AS gross_income,
+      (online.gross_income + offline.gross_income
+        - online.cogs - offline.cogs)::text             AS net_income
+    FROM online, offline
+  `;
+
+  // All products combined, sorted by gross income desc
+  const productRows = await sql<{
+    sku: string;
+    product_name: string;
+    units_sold: string;
+    gross_income: string;
+    net_profit: string;
+  }[]>`
+    WITH bsc AS (
+      SELECT generated_bundle_id, COUNT(*) AS slot_count
+      FROM generated_bundle_item
+      GROUP BY generated_bundle_id
+    ),
+    online_products AS (
+      SELECT
+        gbi.sku_snapshot                                        AS sku,
+        gbi.product_name_snapshot                               AS product_name,
+        SUM(oli.quantity * gbi.quantity_per_bag)                AS units_sold,
+        SUM(oli.line_total::numeric / NULLIF(bsc.slot_count, 0)) AS gross_income,
+        SUM(
+          oli.line_total::numeric / NULLIF(bsc.slot_count, 0)
+          - gbi.cost_snapshot::numeric / 6.5 * oli.quantity * gbi.quantity_per_bag
+        )                                                       AS net_profit
+      FROM customer_order co
+      JOIN order_line_item oli ON oli.customer_order_id = co.id
+      JOIN generated_bundle_item gbi ON gbi.generated_bundle_id = oli.generated_bundle_id
+      JOIN bsc ON bsc.generated_bundle_id = gbi.generated_bundle_id
+      WHERE co.status = ANY(${QUALIFYING_STATUSES})
+        AND co.created_at >= (${dateFrom}::date)::timestamptz
+        AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
+      GROUP BY gbi.sku_snapshot, gbi.product_name_snapshot
+    ),
+    offline_products AS (
+      SELECT
+        ofs.sku_snapshot                                        AS sku,
+        ofs.product_name_snapshot                               AS product_name,
+        SUM(ofs.quantity_sold)                                  AS units_sold,
+        SUM(ofs.line_total)                                     AS gross_income,
+        SUM(ofs.line_total
+          - CASE WHEN ofs.product_id IS NOT NULL
+                 THEN COALESCE(p.cog_adjusted, 0) / 6.5 * ofs.quantity_sold
+                 ELSE 0 END
+        )                                                       AS net_profit
+      FROM offline_fair_sale ofs
+      JOIN offline_fair f ON f.id = ofs.offline_fair_id
+      LEFT JOIN product p ON p.id = ofs.product_id
+      WHERE f.fair_date >= ${dateFrom}::date
+        AND f.fair_date <= ${dateTo}::date
+      GROUP BY ofs.sku_snapshot, ofs.product_name_snapshot
+    ),
+    combined AS (
+      SELECT sku, product_name, units_sold, gross_income, net_profit FROM online_products
+      UNION ALL
+      SELECT sku, product_name, units_sold, gross_income, net_profit FROM offline_products
+    )
+    SELECT
+      sku,
+      product_name,
+      SUM(units_sold)::text   AS units_sold,
+      SUM(gross_income)::text AS gross_income,
+      SUM(net_profit)::text   AS net_profit
+    FROM combined
+    GROUP BY sku, product_name
+    ORDER BY SUM(gross_income) DESC
+  `;
+
+  const allProducts: OverviewProductRow[] = productRows.map(r => ({
+    sku: r.sku,
+    productName: r.product_name,
+    unitsSold: Number(r.units_sold),
+    grossIncome: Number(r.gross_income),
+    netProfit: Number(r.net_profit),
+  }));
+
+  const topByUnits: OverviewTopItem[] = [...allProducts]
+    .sort((a, b) => b.unitsSold - a.unitsSold)
+    .slice(0, 10)
+    .map(r => ({ sku: r.sku, productName: r.productName, unitsSold: r.unitsSold }));
+
+  return {
+    dateFrom,
+    dateTo,
+    totalUnitsSold: Number(totals.total_units_sold),
+    grossIncome: Number(totals.gross_income),
+    netIncome: Number(totals.net_income),
+    topByUnits,
+    allProducts,
   };
 }
 

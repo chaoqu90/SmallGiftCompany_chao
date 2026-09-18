@@ -135310,6 +135310,118 @@ async function getOnlineAnalytics(dateFrom, dateTo) {
     topByProfit
   };
 }
+async function getCombinedOverviewAnalytics(dateFrom, dateTo) {
+  const [totals] = await sql`
+    WITH online AS (
+      SELECT
+        COALESCE(SUM(oli.quantity * gbi.quantity_per_bag), 0)          AS units_sold,
+        COALESCE(SUM(oli.line_total), 0)                               AS gross_income,
+        COALESCE(SUM(gbi.cost_snapshot::numeric / 6.5 * oli.quantity * gbi.quantity_per_bag), 0) AS cogs
+      FROM customer_order co
+      JOIN order_line_item oli ON oli.customer_order_id = co.id
+      JOIN generated_bundle_item gbi ON gbi.generated_bundle_id = oli.generated_bundle_id
+      WHERE co.status = ANY(${QUALIFYING_STATUSES})
+        AND co.created_at >= (${dateFrom}::date)::timestamptz
+        AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
+    ),
+    offline AS (
+      SELECT
+        COALESCE(SUM(ofs.quantity_sold), 0)                            AS units_sold,
+        COALESCE(SUM(ofs.line_total), 0)                               AS gross_income,
+        COALESCE(SUM(
+          CASE WHEN ofs.product_id IS NOT NULL
+               THEN COALESCE(p.cog_adjusted, 0) / 6.5 * ofs.quantity_sold
+               ELSE 0 END
+        ), 0)                                                           AS cogs
+      FROM offline_fair_sale ofs
+      JOIN offline_fair f ON f.id = ofs.offline_fair_id
+      LEFT JOIN product p ON p.id = ofs.product_id
+      WHERE f.fair_date >= ${dateFrom}::date
+        AND f.fair_date <= ${dateTo}::date
+    )
+    SELECT
+      (online.units_sold + offline.units_sold)::text   AS total_units_sold,
+      (online.gross_income + offline.gross_income)::text AS gross_income,
+      (online.gross_income + offline.gross_income
+        - online.cogs - offline.cogs)::text             AS net_income
+    FROM online, offline
+  `;
+  const productRows = await sql`
+    WITH bsc AS (
+      SELECT generated_bundle_id, COUNT(*) AS slot_count
+      FROM generated_bundle_item
+      GROUP BY generated_bundle_id
+    ),
+    online_products AS (
+      SELECT
+        gbi.sku_snapshot                                        AS sku,
+        gbi.product_name_snapshot                               AS product_name,
+        SUM(oli.quantity * gbi.quantity_per_bag)                AS units_sold,
+        SUM(oli.line_total::numeric / NULLIF(bsc.slot_count, 0)) AS gross_income,
+        SUM(
+          oli.line_total::numeric / NULLIF(bsc.slot_count, 0)
+          - gbi.cost_snapshot::numeric / 6.5 * oli.quantity * gbi.quantity_per_bag
+        )                                                       AS net_profit
+      FROM customer_order co
+      JOIN order_line_item oli ON oli.customer_order_id = co.id
+      JOIN generated_bundle_item gbi ON gbi.generated_bundle_id = oli.generated_bundle_id
+      JOIN bsc ON bsc.generated_bundle_id = gbi.generated_bundle_id
+      WHERE co.status = ANY(${QUALIFYING_STATUSES})
+        AND co.created_at >= (${dateFrom}::date)::timestamptz
+        AND co.created_at <= ((${dateTo}::date) + INTERVAL '1 day' - INTERVAL '1 second')
+      GROUP BY gbi.sku_snapshot, gbi.product_name_snapshot
+    ),
+    offline_products AS (
+      SELECT
+        ofs.sku_snapshot                                        AS sku,
+        ofs.product_name_snapshot                               AS product_name,
+        SUM(ofs.quantity_sold)                                  AS units_sold,
+        SUM(ofs.line_total)                                     AS gross_income,
+        SUM(ofs.line_total
+          - CASE WHEN ofs.product_id IS NOT NULL
+                 THEN COALESCE(p.cog_adjusted, 0) / 6.5 * ofs.quantity_sold
+                 ELSE 0 END
+        )                                                       AS net_profit
+      FROM offline_fair_sale ofs
+      JOIN offline_fair f ON f.id = ofs.offline_fair_id
+      LEFT JOIN product p ON p.id = ofs.product_id
+      WHERE f.fair_date >= ${dateFrom}::date
+        AND f.fair_date <= ${dateTo}::date
+      GROUP BY ofs.sku_snapshot, ofs.product_name_snapshot
+    ),
+    combined AS (
+      SELECT sku, product_name, units_sold, gross_income, net_profit FROM online_products
+      UNION ALL
+      SELECT sku, product_name, units_sold, gross_income, net_profit FROM offline_products
+    )
+    SELECT
+      sku,
+      product_name,
+      SUM(units_sold)::text   AS units_sold,
+      SUM(gross_income)::text AS gross_income,
+      SUM(net_profit)::text   AS net_profit
+    FROM combined
+    GROUP BY sku, product_name
+    ORDER BY SUM(gross_income) DESC
+  `;
+  const allProducts = productRows.map((r5) => ({
+    sku: r5.sku,
+    productName: r5.product_name,
+    unitsSold: Number(r5.units_sold),
+    grossIncome: Number(r5.gross_income),
+    netProfit: Number(r5.net_profit)
+  }));
+  const topByUnits = [...allProducts].sort((a5, b6) => b6.unitsSold - a5.unitsSold).slice(0, 10).map((r5) => ({ sku: r5.sku, productName: r5.productName, unitsSold: r5.unitsSold }));
+  return {
+    dateFrom,
+    dateTo,
+    totalUnitsSold: Number(totals.total_units_sold),
+    grossIncome: Number(totals.gross_income),
+    netIncome: Number(totals.net_income),
+    topByUnits,
+    allProducts
+  };
+}
 function toUrgency(qty) {
   if (qty === 0) return "CRITICAL";
   if (qty <= 3) return "VERY_LOW";
@@ -135447,6 +135559,31 @@ adminAnalyticsRouter.get(
         return;
       }
       const result = await getOnlineAnalytics(dateFrom, dateTo);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminAnalyticsRouter.get(
+  "/overview",
+  async (req, res, next) => {
+    try {
+      const { dateFrom, dateTo } = req.query;
+      if (!dateFrom || !dateTo) {
+        res.status(400).json({ detail: "dateFrom and dateTo are required." });
+        return;
+      }
+      const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      if (!ISO_DATE_RE.test(dateFrom) || isNaN(Date.parse(dateFrom)) || !ISO_DATE_RE.test(dateTo) || isNaN(Date.parse(dateTo))) {
+        res.status(400).json({ detail: "Dates must be valid ISO dates (YYYY-MM-DD)." });
+        return;
+      }
+      if (dateFrom > dateTo) {
+        res.status(400).json({ detail: "dateFrom must not be after dateTo." });
+        return;
+      }
+      const result = await getCombinedOverviewAnalytics(dateFrom, dateTo);
       res.json(result);
     } catch (err) {
       next(err);

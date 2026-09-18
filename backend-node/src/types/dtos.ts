@@ -310,6 +310,32 @@ export interface OnlineAnalyticsDto {
   topByProfit: OnlineTopByProfitItem[];
 }
 
+// ─── Analytics — Combined Overview (FEAT-006) ────────────────────────────────
+
+export interface OverviewTopItem {
+  sku: string;
+  productName: string;
+  unitsSold: number;
+}
+
+export interface OverviewProductRow {
+  sku: string;
+  productName: string;
+  unitsSold: number;
+  grossIncome: number;
+  netProfit: number;
+}
+
+export interface OverviewAnalyticsDto {
+  dateFrom: string;
+  dateTo: string;
+  totalUnitsSold: number;
+  grossIncome: number;
+  netIncome: number;
+  topByUnits: OverviewTopItem[];
+  allProducts: OverviewProductRow[];
+}
+
 // ─── Analytics — Inventory Insights (FEAT-006) ───────────────────────────────
 
 export type InventoryUrgency = 'CRITICAL' | 'VERY_LOW' | 'LOW';

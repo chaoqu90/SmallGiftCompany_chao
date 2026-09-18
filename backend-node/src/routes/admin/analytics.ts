@@ -12,7 +12,7 @@
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { basicAuth } from '../../middleware/auth.js';
-import { getOnlineAnalytics, getInventoryInsights } from '../../repositories/adminAnalytics.js';
+import { getOnlineAnalytics, getInventoryInsights, getCombinedOverviewAnalytics } from '../../repositories/adminAnalytics.js';
 
 export const adminAnalyticsRouter = Router();
 
@@ -91,6 +91,32 @@ adminAnalyticsRouter.get(
       }
 
       const result = await getOnlineAnalytics(dateFrom, dateTo);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── GET /overview ────────────────────────────────────────────────────────────
+
+adminAnalyticsRouter.get(
+  '/overview',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { dateFrom, dateTo } = req.query as { dateFrom?: string; dateTo?: string };
+      if (!dateFrom || !dateTo) {
+        res.status(400).json({ detail: 'dateFrom and dateTo are required.' }); return;
+      }
+      const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+      if (!ISO_DATE_RE.test(dateFrom) || isNaN(Date.parse(dateFrom)) ||
+          !ISO_DATE_RE.test(dateTo)   || isNaN(Date.parse(dateTo))) {
+        res.status(400).json({ detail: 'Dates must be valid ISO dates (YYYY-MM-DD).' }); return;
+      }
+      if (dateFrom > dateTo) {
+        res.status(400).json({ detail: 'dateFrom must not be after dateTo.' }); return;
+      }
+      const result = await getCombinedOverviewAnalytics(dateFrom, dateTo);
       res.json(result);
     } catch (err) {
       next(err);

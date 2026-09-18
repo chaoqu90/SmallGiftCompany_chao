@@ -28,7 +28,7 @@ import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
 import { OfflineFairImportForm } from './OfflineFairImportForm'
 import { OfflineFairAnalyticsSection } from './OfflineFairAnalyticsSection'
-import { OnlineAnalyticsSection } from './OnlineAnalyticsSection'
+import { OverviewAnalyticsSection } from './OverviewAnalyticsSection'
 import { InventoryInsightsSection } from './InventoryInsightsSection'
 
 // ─── Tab Panel ────────────────────────────────────────────────────────────────
@@ -367,27 +367,27 @@ export function AdminDashboardPage() {
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs value={tab} onChange={(_, v) => setTab(v)} aria-label="Dashboard tabs"
             variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile>
-            <Tab label="Overview"     />
-            <Tab label="Offline Fair" />
-            <Tab label="Online"       />
-            <Tab label="Inventory"    />
+            <Tab label="Overview"         />
+            <Tab label="Inventory"        />
+            <Tab label="Bundle Analysis"  />
+            <Tab label="Offline Fair"     />
           </Tabs>
         </Box>
 
         <TabPanel value={tab} index={0}>
-          <OverviewTab />
+          <OverviewAnalyticsSection />
         </TabPanel>
 
         <TabPanel value={tab} index={1}>
-          <OfflineFairTab />
+          <InventoryInsightsSection />
         </TabPanel>
 
         <TabPanel value={tab} index={2}>
-          <OnlineAnalyticsSection />
+          <OverviewTab />
         </TabPanel>
 
         <TabPanel value={tab} index={3}>
-          <InventoryInsightsSection />
+          <OfflineFairTab />
         </TabPanel>
       </Box>
     </Box>

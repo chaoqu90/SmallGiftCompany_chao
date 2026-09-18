@@ -241,6 +241,32 @@ export interface OnlineAnalytics {
   topByProfit:    OnlineTopByProfitItem[]
 }
 
+// ─── Analytics — Combined Overview (FEAT-006) ────────────────────────────────
+
+export interface OverviewTopItem {
+  sku: string
+  productName: string
+  unitsSold: number
+}
+
+export interface OverviewProductRow {
+  sku: string
+  productName: string
+  unitsSold: number
+  grossIncome: number
+  netProfit: number
+}
+
+export interface OverviewAnalytics {
+  dateFrom: string
+  dateTo: string
+  totalUnitsSold: number
+  grossIncome: number
+  netIncome: number
+  topByUnits: OverviewTopItem[]
+  allProducts: OverviewProductRow[]
+}
+
 // ─── Analytics — Inventory Insights (FEAT-006) ───────────────────────────────
 
 export type InventoryUrgency = 'CRITICAL' | 'VERY_LOW' | 'LOW'
@@ -459,6 +485,10 @@ export const adminApi = {
   /** GET /admin/api/analytics/online?dateFrom=&dateTo= */
   getOnlineAnalytics: (auth: string, dateFrom: string, dateTo: string) =>
     adminRequest<OnlineAnalytics>(`/admin/api/analytics/online?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`, auth),
+
+  /** GET /admin/api/analytics/overview?dateFrom=&dateTo= */
+  getOverviewAnalytics: (auth: string, dateFrom: string, dateTo: string) =>
+    adminRequest<OverviewAnalytics>(`/admin/api/analytics/overview?dateFrom=${encodeURIComponent(dateFrom)}&dateTo=${encodeURIComponent(dateTo)}`, auth),
 
   /** GET /admin/api/analytics/inventory */
   getInventoryInsights: (auth: string) =>
