@@ -39,9 +39,11 @@ import {
   Snackbar,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import SearchIcon from '@mui/icons-material/Search'
@@ -104,6 +106,7 @@ export function AdminBundlePreviewPage() {
   const [highlightedSku, setHighlightedSku] = useState<string | null>(null)
   const [upgradeOptionId, setUpgradeOptionId] = useState<string>('standard')
   const [giftBagOptionId, setGiftBagOptionId] = useState<string>('classic')
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   // Send link state (AC-FP-A.3, AC-FP-A.4)
   const [sending,       setSending]       = useState(false)
@@ -336,6 +339,116 @@ export function AdminBundlePreviewPage() {
               highlightedSku={highlightedSku}
               onShapeClick={sku => setHighlightedSku(prev => prev === sku ? null : sku)}
             />
+
+            {/* ── Product image gallery ─────────────────────────────────────── */}
+            {(() => {
+              const gallerySlots: { key: string; label: string; imageUrl: string | null; sku: string | null; included: boolean }[] = [
+                ...displayedItems.map(item => ({ key: item.sku, label: item.productName, imageUrl: item.imageUrl, sku: item.sku, included: true })),
+                ...(bundle.upgrade?.standardProductName ? [{
+                  key: '__standard__',
+                  label: bundle.upgrade.standardProductName,
+                  imageUrl: bundle.upgrade.standardImageUrl ?? null,
+                  sku: bundle.upgrade.standardSku ?? null,
+                  included: upgradeOptionId === 'standard',
+                }] : []),
+                ...(bundle.upgrade?.upgradedProductName ? [{
+                  key: '__upgraded__',
+                  label: bundle.upgrade.upgradedProductName,
+                  imageUrl: bundle.upgrade.upgradedImageUrl ?? null,
+                  sku: bundle.upgrade.upgradedSku ?? null,
+                  included: upgradeOptionId === 'upgraded',
+                }] : []),
+              ]
+              const hasAnyImage = gallerySlots.some(s => s.imageUrl)
+              if (!hasAnyImage) return null
+              return (
+                <Box sx={{ mt: 2, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1 }}>
+                  {gallerySlots.map(slot => {
+                    const isHighlighted = slot.sku !== null && highlightedSku === slot.sku
+                    return (
+                      <Tooltip key={slot.key} title={slot.label} placement="top" arrow>
+                        <Box
+                          onClick={() => {
+                            if (slot.sku) setHighlightedSku(prev => prev === slot.sku ? null : slot.sku)
+                            if (slot.imageUrl) setLightboxUrl(slot.imageUrl)
+                          }}
+                          sx={{
+                            position: 'relative',
+                            aspectRatio: '1',
+                            borderRadius: '10px',
+                            overflow: 'hidden',
+                            cursor: slot.imageUrl ? 'zoom-in' : 'default',
+                            border: isHighlighted ? '2.5px solid #4A6FA5' : '2px solid transparent',
+                            backgroundColor: '#F0EDE8',
+                            transition: 'border-color 150ms ease, box-shadow 150ms ease',
+                            boxShadow: isHighlighted ? '0 0 0 3px #4A6FA530' : 'none',
+                            '&:hover': { borderColor: slot.imageUrl ? '#A0A0A8' : 'transparent' },
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {slot.imageUrl ? (
+                            <Box
+                              component="img"
+                              src={slot.imageUrl}
+                              alt={slot.label}
+                              sx={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                opacity: highlightedSku && !isHighlighted ? 0.4 : 1,
+                                transition: 'opacity 200ms ease',
+                              }}
+                            />
+                          ) : (
+                            <Typography sx={{ fontSize: '0.6rem', color: '#A0A0A8', textAlign: 'center', px: 0.5, lineHeight: 1.3 }}>
+                              {slot.label}
+                            </Typography>
+                          )}
+                          {slot.included && (
+                            <CheckCircleIcon
+                              sx={{
+                                position: 'absolute',
+                                top: 4,
+                                right: 4,
+                                fontSize: '1rem',
+                                color: '#F47F6B',
+                                backgroundColor: 'white',
+                                borderRadius: '50%',
+                                pointerEvents: 'none',
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Tooltip>
+                    )
+                  })}
+                </Box>
+              )
+            })()}
+
+            {/* ── Lightbox ──────────────────────────────────────────────────── */}
+            <Dialog
+              open={!!lightboxUrl}
+              onClose={() => setLightboxUrl(null)}
+              maxWidth="md"
+              PaperProps={{ sx: { backgroundColor: 'transparent', boxShadow: 'none' } }}
+            >
+              <Box
+                component="img"
+                src={lightboxUrl ?? ''}
+                alt="Product"
+                onClick={() => setLightboxUrl(null)}
+                sx={{
+                  maxWidth: '90vw',
+                  maxHeight: '90vh',
+                  objectFit: 'contain',
+                  borderRadius: '12px',
+                  cursor: 'zoom-out',
+                }}
+              />
+            </Dialog>
           </Grid2>
 
           {/* ── Right column: item cards + options ──────────────────────────── */}
