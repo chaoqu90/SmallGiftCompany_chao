@@ -14,6 +14,7 @@ import type {
   GeneratedBundleUpgradeRow,
   GeneratedBundleGiftBagRow,
   ProductRow,
+  GiftBagOptionRow,
 } from '../types/entities.js';
 
 // ─── Snapshot types passed into saveBundle ────────────────────────────────────
@@ -308,6 +309,62 @@ export async function patchBundleItem(
       WHERE gb.public_id = ${bundlePublicId}
     `;
   });
+}
+
+/**
+ * Replaces the standard or upgraded product in a bundle's upgrade row.
+ */
+export async function patchBundleUpgrade(
+  bundlePublicId: string,
+  tier: 'standard' | 'upgraded',
+  product: ProductRow,
+): Promise<void> {
+  if (tier === 'standard') {
+    await sql`
+      UPDATE generated_bundle_upgrade
+      SET
+        standard_product_id            = ${product.id},
+        standard_product_name_snapshot = ${product.name},
+        standard_sku_snapshot          = ${product.sku},
+        standard_cost_snapshot         = ${product.cost}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+    `;
+  } else {
+    await sql`
+      UPDATE generated_bundle_upgrade
+      SET
+        product_id            = ${product.id},
+        product_name_snapshot = ${product.name},
+        sku_snapshot          = ${product.sku},
+        cost_snapshot         = ${product.cost}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+    `;
+  }
+}
+
+/**
+ * Replaces the gift bag option in a bundle's gift bag row.
+ */
+export async function patchBundleGiftBag(
+  bundlePublicId: string,
+  giftBagOption: GiftBagOptionRow,
+): Promise<void> {
+  await sql`
+    UPDATE generated_bundle_gift_bag
+    SET
+      gift_bag_option_id               = ${giftBagOption.id},
+      name_snapshot                    = ${giftBagOption.name},
+      cost_snapshot                    = ${giftBagOption.cost},
+      retail_price_adjustment_snapshot = ${giftBagOption.retail_price_adjustment},
+      is_default                       = ${giftBagOption.is_default}
+    WHERE generated_bundle_id = (
+      SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+    )
+  `;
 }
 
 /**

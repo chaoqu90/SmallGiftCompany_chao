@@ -9,8 +9,10 @@
  *  - Loads bundle from public GET /api/generated-bundles/:bundlePublicId
  *  - Sticky top bar with "Back to Future Parties" link
  *  - Swap icon on each item card — opens swap modal
+ *  - Swap icon on upgrade option cards — opens swap modal for upgrade products
+ *  - Swap icon on gift bag option card — opens swap modal for gift bag
  *  - Swap modal: loads alternatives, lets admin select and confirm replacement
- *  - Sticky bottom bar with "Send Link" / "Re-send" button (when futurePartyId provided)
+ *  - Sticky bottom bar with Bundle Cost + Bundle Retail and "Send Link" / "Re-send" button
  *
  * Route: /admin/bundle-preview/:bundlePublicId?futurePartyId=:futurePartyId
  *
@@ -50,7 +52,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
-import { adminApi, type AlternativeProductDto } from '../../api/admin'
+import { adminApi, type AlternativeProductDto, type GiftBagAlternativeDto } from '../../api/admin'
 import { ConfiguratorVisual } from '../../components/ConfiguratorVisual'
 import { IncludedItemCard } from '../../components/IncludedItemCard'
 import { OptionCard } from '../../components/OptionCard'
@@ -116,8 +118,8 @@ export function AdminBundlePreviewPage() {
 
   // Swap modal state (AC-FP-C.1 – AC-FP-C.9)
   const [swapSlotCode,    setSwapSlotCode]    = useState<string | null>(null)
-  const [swapSlotName,    setSwapSlotName]    = useState<string>('')   // slot code label
-  const [swapCurrentName, setSwapCurrentName] = useState<string>('')   // current product name
+  const [swapSlotName,    setSwapSlotName]    = useState<string>('')
+  const [swapCurrentName, setSwapCurrentName] = useState<string>('')
   const [alternatives,    setAlternatives]    = useState<AlternativeProductDto[]>([])
   const [altLoading,      setAltLoading]      = useState(false)
   const [altError,        setAltError]        = useState<string | null>(null)
@@ -126,6 +128,14 @@ export function AdminBundlePreviewPage() {
   const [selectedAltId,   setSelectedAltId]   = useState<number | null>(null)
   const [swapping,        setSwapping]        = useState(false)
   const [swapError,       setSwapError]       = useState<string | null>(null)
+
+  // Upgrade swap state
+  const [swapUpgradeTier, setSwapUpgradeTier] = useState<'standard' | 'upgraded' | null>(null)
+
+  // Gift bag swap state
+  const [swapGiftBagOpen,      setSwapGiftBagOpen]      = useState(false)
+  const [giftBagAlternatives,  setGiftBagAlternatives]  = useState<GiftBagAlternativeDto[]>([])
+  const [selectedGiftBagId,    setSelectedGiftBagId]    = useState<number | null>(null)
 
   const filteredAlternatives = useMemo(
     () => altSearch.trim()
@@ -165,7 +175,7 @@ export function AdminBundlePreviewPage() {
     return () => { cancelled = true }
   }, [bundlePublicId, navigate])
 
-  // ── Load alternatives when swap modal opens (design §5.5) ─────────────────
+  // ── Load item alternatives when item swap modal opens (design §5.5) ──────
 
   useEffect(() => {
     if (!swapSlotCode || !bundlePublicId || !authHeader) return
@@ -184,6 +194,44 @@ export function AdminBundlePreviewPage() {
     return () => { cancelled = true }
   }, [swapSlotCode, bundlePublicId, authHeader])
 
+  // ── Load upgrade alternatives when upgrade swap opens ─────────────────────
+
+  useEffect(() => {
+    if (!swapUpgradeTier || !bundlePublicId || !authHeader) return
+
+    let cancelled = false
+    setAltLoading(true)
+    setAltError(null)
+    setAlternatives([])
+    setSelectedAltId(null)
+
+    adminApi.getUpgradeAlternatives(authHeader, bundlePublicId, swapUpgradeTier)
+      .then(data => { if (!cancelled) setAlternatives(data) })
+      .catch(() => { if (!cancelled) setAltError('Failed to load alternatives.') })
+      .finally(() => { if (!cancelled) setAltLoading(false) })
+
+    return () => { cancelled = true }
+  }, [swapUpgradeTier, bundlePublicId, authHeader])
+
+  // ── Load gift bag alternatives when gift bag swap opens ───────────────────
+
+  useEffect(() => {
+    if (!swapGiftBagOpen || !bundlePublicId || !authHeader) return
+
+    let cancelled = false
+    setAltLoading(true)
+    setAltError(null)
+    setGiftBagAlternatives([])
+    setSelectedGiftBagId(null)
+
+    adminApi.getGiftBagAlternatives(authHeader, bundlePublicId)
+      .then(data => { if (!cancelled) setGiftBagAlternatives(data) })
+      .catch(() => { if (!cancelled) setAltError('Failed to load gift bag options.') })
+      .finally(() => { if (!cancelled) setAltLoading(false) })
+
+    return () => { cancelled = true }
+  }, [swapGiftBagOpen, bundlePublicId, authHeader])
+
   // ── Send Link (AC-FP-A.4) ─────────────────────────────────────────────────
 
   async function handleSendLink() {
@@ -200,33 +248,60 @@ export function AdminBundlePreviewPage() {
     }
   }
 
+  // ── Swap open/close helpers ───────────────────────────────────────────────
+
+  function openUpgradeSwap(tier: 'standard' | 'upgraded', currentName: string) {
+    setSwapUpgradeTier(tier)
+    setSwapCurrentName(currentName)
+    setSelectedAltId(null)
+    setAltSearch('')
+    setExpandedAltId(null)
+    setSwapError(null)
+  }
+
+  function openGiftBagSwap(currentName: string) {
+    setSwapGiftBagOpen(true)
+    setSwapCurrentName(currentName)
+    setGiftBagAlternatives([])
+    setSelectedGiftBagId(null)
+    setSwapError(null)
+  }
+
+  function handleCloseAllSwaps() {
+    setSwapSlotCode(null)
+    setSwapUpgradeTier(null)
+    setSwapGiftBagOpen(false)
+    setSelectedAltId(null)
+    setSelectedGiftBagId(null)
+    setSwapError(null)
+    setAltSearch('')
+    setExpandedAltId(null)
+  }
+
   // ── Confirm swap (AC-FP-C.5, AC-FP-C.6, AC-FP-C.7) ─────────────────────
 
   async function handleSwapConfirm() {
-    if (!selectedAltId || !swapSlotCode || !bundlePublicId || !authHeader) return
+    if (!bundlePublicId || !authHeader) return
     setSwapping(true)
     setSwapError(null)
     try {
-      const updated = await adminApi.patchBundleItem(authHeader, bundlePublicId, swapSlotCode, selectedAltId)
+      let updated: GeneratedBundleResponse
+      if (swapSlotCode && selectedAltId) {
+        updated = await adminApi.patchBundleItem(authHeader, bundlePublicId, swapSlotCode, selectedAltId)
+      } else if (swapUpgradeTier && selectedAltId) {
+        updated = await adminApi.patchBundleUpgrade(authHeader, bundlePublicId, swapUpgradeTier, selectedAltId)
+      } else if (swapGiftBagOpen && selectedGiftBagId) {
+        updated = await adminApi.patchBundleGiftBag(authHeader, bundlePublicId, selectedGiftBagId)
+      } else {
+        return
+      }
       setBundle(updated)
-      setSwapSlotCode(null)
-      setSelectedAltId(null)
-      setSwapError(null)
-      setAltSearch('')
-      setExpandedAltId(null)
+      handleCloseAllSwaps()
     } catch (err) {
       setSwapError(err instanceof Error ? err.message : 'Failed to replace product.')
     } finally {
       setSwapping(false)
     }
-  }
-
-  function handleSwapCancel() {
-    setSwapSlotCode(null)
-    setSelectedAltId(null)
-    setSwapError(null)
-    setAltSearch('')
-    setExpandedAltId(null)
   }
 
   // ── Loading state (AC-FP-A.6) ─────────────────────────────────────────────
@@ -292,6 +367,8 @@ export function AdminBundlePreviewPage() {
   const giftBagOptions = bundle.giftBag
     ? [{ id: bundle.giftBag.code, label: bundle.giftBag.name, description: 'Ready-to-fill gift bag', meta: 'Included' }]
     : [{ id: 'classic', label: 'Classic Party Bag', description: 'Our standard ready-to-fill gift bag', meta: 'Included' }]
+
+  const swapDialogOpen = swapSlotCode !== null || swapUpgradeTier !== null || swapGiftBagOpen
 
   return (
     <Box sx={{ backgroundColor: C.bg, minHeight: '100vh' }}>
@@ -525,15 +602,31 @@ export function AdminBundlePreviewPage() {
             </Typography>
             <Stack spacing={1.5} sx={{ mb: 3 }} role="radiogroup" aria-label="Upgrade options">
               {upgradeOptions.map(opt => (
-                <OptionCard
-                  key={opt.id}
-                  id={opt.id}
-                  label={opt.label}
-                  description={opt.description}
-                  meta={opt.meta}
-                  selected={upgradeOptionId === opt.id}
-                  onClick={() => setUpgradeOptionId(opt.id)}
-                />
+                <Box key={opt.id} sx={{ position: 'relative' }}>
+                  <OptionCard
+                    id={opt.id}
+                    label={opt.label}
+                    description={opt.description}
+                    meta={opt.meta}
+                    selected={upgradeOptionId === opt.id}
+                    onClick={() => setUpgradeOptionId(opt.id)}
+                  />
+                  <IconButton
+                    size="small"
+                    aria-label={`Replace ${opt.label}`}
+                    onClick={() => openUpgradeSwap(opt.id as 'standard' | 'upgraded', opt.label)}
+                    sx={{
+                      position: 'absolute',
+                      top: 8,
+                      right: 8,
+                      backgroundColor: 'rgba(255,255,255,0.9)',
+                      border: '1px solid #D2D2D7',
+                      '&:hover': { backgroundColor: '#F0F4FA' },
+                    }}
+                  >
+                    <SwapHorizIcon fontSize="small" />
+                  </IconButton>
+                </Box>
               ))}
             </Stack>
 
@@ -546,15 +639,33 @@ export function AdminBundlePreviewPage() {
             </Typography>
             <Stack spacing={1.5} sx={{ mb: 3 }} role="radiogroup" aria-label="Gift bag options">
               {giftBagOptions.map(opt => (
-                <OptionCard
-                  key={opt.id}
-                  id={opt.id}
-                  label={opt.label}
-                  description={opt.description}
-                  meta={opt.meta}
-                  selected={giftBagOptionId === opt.id}
-                  onClick={() => setGiftBagOptionId(opt.id)}
-                />
+                <Box key={opt.id} sx={{ position: 'relative' }}>
+                  <OptionCard
+                    id={opt.id}
+                    label={opt.label}
+                    description={opt.description}
+                    meta={opt.meta}
+                    selected={giftBagOptionId === opt.id}
+                    onClick={() => setGiftBagOptionId(opt.id)}
+                  />
+                  {bundle.giftBag && (
+                    <IconButton
+                      size="small"
+                      aria-label={`Replace ${opt.label}`}
+                      onClick={() => openGiftBagSwap(opt.label)}
+                      sx={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        backgroundColor: 'rgba(255,255,255,0.9)',
+                        border: '1px solid #D2D2D7',
+                        '&:hover': { backgroundColor: '#F0F4FA' },
+                      }}
+                    >
+                      <SwapHorizIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                </Box>
               ))}
             </Stack>
 
@@ -580,12 +691,22 @@ export function AdminBundlePreviewPage() {
             gap: 1,
           }}
         >
-          {/* Total price — updates after each swap */}
+          {/* Bundle Cost and Bundle Retail — admin-only */}
           <Box sx={{ mr: 'auto' }}>
-            <Typography variant="caption" color="text.secondary">Bundle Total</Typography>
-            <Typography variant="h6" fontWeight={700} lineHeight={1}>
-              {bundle.bundleRetailPrice != null ? fmt.format(bundle.bundleRetailPrice) : '—'}
-            </Typography>
+            <Box sx={{ display: 'flex', gap: 3, alignItems: 'baseline' }}>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Bundle Cost</Typography>
+                <Typography variant="h6" fontWeight={700} lineHeight={1} color="text.secondary">
+                  {fmt.format(bundle.standardItemCogsSnapshot / 6.5)}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">Bundle Retail</Typography>
+                <Typography variant="h6" fontWeight={700} lineHeight={1}>
+                  {bundle.bundleRetailPrice != null ? fmt.format(bundle.bundleRetailPrice) : '—'}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
 
           {sentAt && (
@@ -638,173 +759,230 @@ export function AdminBundlePreviewPage() {
 
       {/* ── Swap modal (AC-FP-C.2 – AC-FP-C.9) ─────────────────────────── */}
       <Dialog
-        open={swapSlotCode !== null}
-        onClose={handleSwapCancel}
+        open={swapDialogOpen}
+        onClose={handleCloseAllSwaps}
         maxWidth="sm"
         fullWidth
       >
         <DialogTitle sx={{ fontWeight: 700, pb: 0 }}>
-          Replace Item
+          {swapGiftBagOpen ? 'Replace Gift Bag' : 'Replace Item'}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 400 }}>
-            Slot: <strong>{swapSlotName}</strong> · Currently: {swapCurrentName}
+            {swapGiftBagOpen
+              ? `Currently: ${swapCurrentName}`
+              : swapUpgradeTier
+                ? `${swapUpgradeTier === 'standard' ? 'Standard' : 'Premium'} upgrade · Currently: ${swapCurrentName}`
+                : `Slot: ${swapSlotName} · Currently: ${swapCurrentName}`
+            }
           </Typography>
         </DialogTitle>
 
         <DialogContent sx={{ pt: 2 }}>
-          {/* Search bar */}
-          {!altLoading && !altError && alternatives.length > 0 && (
-            <TextField
-              size="small"
-              fullWidth
-              placeholder="Search by name or SKU…"
-              value={altSearch}
-              onChange={e => setAltSearch(e.target.value)}
-              sx={{ mb: 2 }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon fontSize="small" />
-                  </InputAdornment>
-                ),
-              }}
-            />
-          )}
-
-          {/* Loading alternatives */}
-          {altLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
-            </Box>
-          )}
-
-          {/* Alternatives load error */}
-          {!altLoading && altError && (
-            <Alert severity="error">{altError}</Alert>
-          )}
-
-          {/* Empty state */}
-          {!altLoading && !altError && alternatives.length === 0 && (
-            <Typography color="text.secondary" sx={{ py: 2 }}>
-              No alternative products are available for this slot.
-            </Typography>
-          )}
-
-          {/* No search results */}
-          {!altLoading && !altError && alternatives.length > 0 && filteredAlternatives.length === 0 && (
-            <Typography color="text.secondary" sx={{ py: 2 }}>
-              No products match "{altSearch}".
-            </Typography>
-          )}
-
-          {/* Alternatives list */}
-          {!altLoading && !altError && filteredAlternatives.length > 0 && (
-            <List disablePadding>
-              {filteredAlternatives.map(alt => {
-                const isSelected = selectedAltId === alt.id
-                const isExpanded = expandedAltId === alt.id
-                return (
-                  <Box
-                    key={alt.id}
-                    sx={{
-                      mb: 0.75,
-                      border: isSelected ? '2px solid' : '1px solid',
-                      borderColor: isSelected ? 'primary.main' : 'divider',
-                      borderRadius: 1,
-                      overflow: 'hidden',
-                      backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.06)' : 'background.paper',
-                    }}
-                  >
-                    {/* Collapsed row — always visible */}
-                    <ListItemButton
-                      selected={isSelected}
-                      onClick={() => setSelectedAltId(alt.id)}
+          {swapGiftBagOpen ? (
+            // ── Gift bag alternatives list ──────────────────────────────────
+            <>
+              {altLoading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              )}
+              {!altLoading && altError && (
+                <Alert severity="error">{altError}</Alert>
+              )}
+              {!altLoading && !altError && giftBagAlternatives.length === 0 && (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No alternative gift bag options are available.
+                </Typography>
+              )}
+              {!altLoading && !altError && giftBagAlternatives.length > 0 && (
+                <List disablePadding>
+                  {giftBagAlternatives.map(opt => (
+                    <Box
+                      key={opt.id}
                       sx={{
-                        py: 1,
-                        '&.Mui-selected': { backgroundColor: 'transparent' },
-                        '&.Mui-selected:hover': { backgroundColor: 'rgba(25,118,210,0.04)' },
+                        mb: 0.75,
+                        border: selectedGiftBagId === opt.id ? '2px solid' : '1px solid',
+                        borderColor: selectedGiftBagId === opt.id ? 'primary.main' : 'divider',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        backgroundColor: selectedGiftBagId === opt.id ? 'rgba(25,118,210,0.06)' : 'background.paper',
                       }}
                     >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" fontWeight={600} noWrap>{alt.name}</Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {alt.sku} · {alt.formFactor} · ${Number(alt.retailPrice).toFixed(2)}
-                        </Typography>
-                      </Box>
-                      <Chip
-                        label={`${alt.inventoryQuantity} in stock`}
-                        size="small"
-                        color={alt.inventoryQuantity < 5 ? 'warning' : 'default'}
-                        sx={{ mr: 1, fontSize: 11 }}
-                      />
-                      <IconButton
-                        size="small"
-                        onClick={e => {
-                          e.stopPropagation()
-                          setExpandedAltId(prev => prev === alt.id ? null : alt.id)
-                        }}
-                        aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                      <ListItemButton
+                        selected={selectedGiftBagId === opt.id}
+                        onClick={() => setSelectedGiftBagId(opt.id)}
+                        sx={{ py: 1, '&.Mui-selected': { backgroundColor: 'transparent' } }}
                       >
-                        {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-                      </IconButton>
-                    </ListItemButton>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" fontWeight={600}>{opt.name}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Price adj: ${Number(opt.retailPriceAdjustment).toFixed(2)} · Cost: ${Number(opt.cost).toFixed(2)}
+                          </Typography>
+                        </Box>
+                      </ListItemButton>
+                    </Box>
+                  ))}
+                </List>
+              )}
+            </>
+          ) : (
+            // ── Product alternatives list (items + upgrade) ─────────────────
+            <>
+              {/* Search bar */}
+              {!altLoading && !altError && alternatives.length > 0 && (
+                <TextField
+                  size="small"
+                  fullWidth
+                  placeholder="Search by name or SKU…"
+                  value={altSearch}
+                  onChange={e => setAltSearch(e.target.value)}
+                  sx={{ mb: 2 }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+              )}
 
-                    {/* Expanded detail */}
-                    <Collapse in={isExpanded} unmountOnExit>
+              {/* Loading alternatives */}
+              {altLoading && (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress />
+                </Box>
+              )}
+
+              {/* Alternatives load error */}
+              {!altLoading && altError && (
+                <Alert severity="error">{altError}</Alert>
+              )}
+
+              {/* Empty state */}
+              {!altLoading && !altError && alternatives.length === 0 && (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No alternative products are available for this slot.
+                </Typography>
+              )}
+
+              {/* No search results */}
+              {!altLoading && !altError && alternatives.length > 0 && filteredAlternatives.length === 0 && (
+                <Typography color="text.secondary" sx={{ py: 2 }}>
+                  No products match "{altSearch}".
+                </Typography>
+              )}
+
+              {/* Alternatives list */}
+              {!altLoading && !altError && filteredAlternatives.length > 0 && (
+                <List disablePadding>
+                  {filteredAlternatives.map(alt => {
+                    const isSelected = selectedAltId === alt.id
+                    const isExpanded = expandedAltId === alt.id
+                    return (
                       <Box
+                        key={alt.id}
                         sx={{
-                          display: 'flex',
-                          gap: 2,
-                          px: 2,
-                          pb: 2,
-                          pt: 0.5,
-                          borderTop: '1px solid',
-                          borderColor: 'divider',
-                          backgroundColor: '#FAFAFA',
+                          mb: 0.75,
+                          border: isSelected ? '2px solid' : '1px solid',
+                          borderColor: isSelected ? 'primary.main' : 'divider',
+                          borderRadius: 1,
+                          overflow: 'hidden',
+                          backgroundColor: isSelected ? 'rgba(25, 118, 210, 0.06)' : 'background.paper',
                         }}
                       >
-                        {/* Product image */}
-                        {alt.imageUrl ? (
-                          <Box
-                            component="img"
-                            src={alt.imageUrl}
-                            alt={alt.name}
-                            sx={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }}
+                        {/* Collapsed row — always visible */}
+                        <ListItemButton
+                          selected={isSelected}
+                          onClick={() => setSelectedAltId(alt.id)}
+                          sx={{
+                            py: 1,
+                            '&.Mui-selected': { backgroundColor: 'transparent' },
+                            '&.Mui-selected:hover': { backgroundColor: 'rgba(25,118,210,0.04)' },
+                          }}
+                        >
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" fontWeight={600} noWrap>{alt.name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {alt.sku} · {alt.formFactor} · ${Number(alt.retailPrice).toFixed(2)}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            label={`${alt.inventoryQuantity} in stock`}
+                            size="small"
+                            color={alt.inventoryQuantity < 5 ? 'warning' : 'default'}
+                            sx={{ mr: 1, fontSize: 11 }}
                           />
-                        ) : (
+                          <IconButton
+                            size="small"
+                            onClick={e => {
+                              e.stopPropagation()
+                              setExpandedAltId(prev => prev === alt.id ? null : alt.id)
+                            }}
+                            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                          >
+                            {isExpanded ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+                          </IconButton>
+                        </ListItemButton>
+
+                        {/* Expanded detail */}
+                        <Collapse in={isExpanded} unmountOnExit>
                           <Box
                             sx={{
-                              width: 80, height: 80, borderRadius: 1, flexShrink: 0,
-                              backgroundColor: '#E5E5EA',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              display: 'flex',
+                              gap: 2,
+                              px: 2,
+                              pb: 2,
+                              pt: 0.5,
+                              borderTop: '1px solid',
+                              borderColor: 'divider',
+                              backgroundColor: '#FAFAFA',
                             }}
                           >
-                            <Typography variant="caption" color="text.disabled">No image</Typography>
-                          </Box>
-                        )}
+                            {/* Product image */}
+                            {alt.imageUrl ? (
+                              <Box
+                                component="img"
+                                src={alt.imageUrl}
+                                alt={alt.name}
+                                sx={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }}
+                              />
+                            ) : (
+                              <Box
+                                sx={{
+                                  width: 80, height: 80, borderRadius: 1, flexShrink: 0,
+                                  backgroundColor: '#E5E5EA',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}
+                              >
+                                <Typography variant="caption" color="text.disabled">No image</Typography>
+                              </Box>
+                            )}
 
-                        {/* Details */}
-                        <Stack spacing={0.5} justifyContent="center">
-                          <Box sx={{ display: 'flex', gap: 2 }}>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Cost</Typography>
-                              <Typography variant="body2" fontWeight={600}>${Number(alt.cost).toFixed(2)}</Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Retail</Typography>
-                              <Typography variant="body2" fontWeight={600}>${Number(alt.retailPrice).toFixed(2)}</Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">Inventory</Typography>
-                              <Typography variant="body2" fontWeight={600}>{alt.inventoryQuantity}</Typography>
-                            </Box>
+                            {/* Details */}
+                            <Stack spacing={0.5} justifyContent="center">
+                              <Box sx={{ display: 'flex', gap: 2 }}>
+                                <Box>
+                                  <Typography variant="caption" color="text.secondary">Cost</Typography>
+                                  <Typography variant="body2" fontWeight={600}>${Number(alt.cost).toFixed(2)}</Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" color="text.secondary">Retail</Typography>
+                                  <Typography variant="body2" fontWeight={600}>${Number(alt.retailPrice).toFixed(2)}</Typography>
+                                </Box>
+                                <Box>
+                                  <Typography variant="caption" color="text.secondary">Inventory</Typography>
+                                  <Typography variant="body2" fontWeight={600}>{alt.inventoryQuantity}</Typography>
+                                </Box>
+                              </Box>
+                            </Stack>
                           </Box>
-                        </Stack>
+                        </Collapse>
                       </Box>
-                    </Collapse>
-                  </Box>
-                )
-              })}
-            </List>
+                    )
+                  })}
+                </List>
+              )}
+            </>
           )}
 
           {/* Swap error */}
@@ -816,13 +994,13 @@ export function AdminBundlePreviewPage() {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={handleSwapCancel} disabled={swapping}>
+          <Button onClick={handleCloseAllSwaps} disabled={swapping}>
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleSwapConfirm}
-            disabled={selectedAltId === null || swapping}
+            disabled={swapping || (swapGiftBagOpen ? selectedGiftBagId === null : selectedAltId === null)}
           >
             {swapping
               ? <><CircularProgress size={16} color="inherit" sx={{ mr: 1 }} />Replacing…</>

@@ -157,6 +157,13 @@ export interface AlternativeProductDto {
   inventoryQuantity: number
 }
 
+export interface GiftBagAlternativeDto {
+  id:                    number
+  name:                  string
+  cost:                  string
+  retailPriceAdjustment: string
+}
+
 /**
  * Admin representation of a future party lead.
  * Requirements: AC4.3, AC4.4, AC5.1, AC6.1, AC6.2
@@ -422,6 +429,32 @@ export const adminApi = {
       `/admin/api/generated-bundles/${bundlePublicId}/items/${slotCode}`, auth, {
         method: 'PATCH',
         body: JSON.stringify({ productId }),
+      },
+    ),
+
+  getUpgradeAlternatives: (auth: string, bundlePublicId: string, tier: 'standard' | 'upgraded') =>
+    adminRequest<AlternativeProductDto[]>(
+      `/admin/api/generated-bundles/${bundlePublicId}/upgrade/alternatives?tier=${tier}`, auth,
+    ),
+
+  patchBundleUpgrade: (auth: string, bundlePublicId: string, tier: 'standard' | 'upgraded', productId: number) =>
+    adminRequest<GeneratedBundleResponse>(
+      `/admin/api/generated-bundles/${bundlePublicId}/upgrade`, auth, {
+        method: 'PATCH',
+        body: JSON.stringify({ tier, productId }),
+      },
+    ),
+
+  getGiftBagAlternatives: (auth: string, bundlePublicId: string) =>
+    adminRequest<GiftBagAlternativeDto[]>(
+      `/admin/api/generated-bundles/${bundlePublicId}/giftbag/alternatives`, auth,
+    ),
+
+  patchBundleGiftBag: (auth: string, bundlePublicId: string, giftBagOptionId: number) =>
+    adminRequest<GeneratedBundleResponse>(
+      `/admin/api/generated-bundles/${bundlePublicId}/giftbag`, auth, {
+        method: 'PATCH',
+        body: JSON.stringify({ giftBagOptionId }),
       },
     ),
 
