@@ -137,8 +137,8 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
 
 function buildFuturePartyHtml(data: FuturePartyEmailData): string {
   const label = genderLabel[data.kidGender];
-  // new Date('YYYY-MM-DD') parses as UTC midnight; add T00:00 to get local day
-  const formattedDate = dateFormatter.format(new Date(`${data.partyDate}T00:00`));
+  // Slice to YYYY-MM-DD first — DB may return a full ISO timestamp
+  const formattedDate = dateFormatter.format(new Date(`${data.partyDate.slice(0, 10)}T00:00`));
 
   return `<!DOCTYPE html>
 <html>
@@ -166,7 +166,7 @@ function buildFuturePartyHtml(data: FuturePartyEmailData): string {
 
 export function buildFuturePartyText(data: FuturePartyEmailData): string {
   const label = genderLabel[data.kidGender];
-  const formattedDate = dateFormatter.format(new Date(`${data.partyDate}T00:00`));
+  const formattedDate = dateFormatter.format(new Date(`${data.partyDate.slice(0, 10)}T00:00`));
 
   return [
     "Your Goodie Bag is Ready!",
