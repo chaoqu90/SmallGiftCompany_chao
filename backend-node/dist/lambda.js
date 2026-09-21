@@ -115344,7 +115344,8 @@ var dateFormatter = new Intl.DateTimeFormat("en-US", {
 });
 function buildFuturePartyHtml(data) {
   const label = genderLabel[data.kidGender];
-  const formattedDate = dateFormatter.format(/* @__PURE__ */ new Date(`${data.partyDate}T00:00`));
+  const partyDateStr = typeof data.partyDate === "string" ? data.partyDate : data.partyDate.toISOString();
+  const formattedDate = dateFormatter.format(/* @__PURE__ */ new Date(`${partyDateStr.slice(0, 10)}T12:00`));
   return `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -115370,7 +115371,8 @@ function buildFuturePartyHtml(data) {
 }
 function buildFuturePartyText(data) {
   const label = genderLabel[data.kidGender];
-  const formattedDate = dateFormatter.format(/* @__PURE__ */ new Date(`${data.partyDate}T00:00`));
+  const partyDateStr = typeof data.partyDate === "string" ? data.partyDate : data.partyDate.toISOString();
+  const formattedDate = dateFormatter.format(/* @__PURE__ */ new Date(`${partyDateStr.slice(0, 10)}T12:00`));
   return [
     "Your Goodie Bag is Ready!",
     "",
