@@ -117,7 +117,7 @@ export const FUTURE_PARTY_EMAIL_SUBJECT = 'Your personalised goodie bag is ready
 
 export interface FuturePartyEmailData {
   toEmail:          string;
-  partyDate:        string;   // 'YYYY-MM-DD'
+  partyDate:        string | Date;   // 'YYYY-MM-DD' string or Date object from postgres.js
   kidGender:        'BOY' | 'GIRL' | 'MIXED';
   bundleUrl:        string;
   extraRecipients?: string[];   // CC addresses
@@ -137,8 +137,9 @@ const dateFormatter = new Intl.DateTimeFormat('en-US', {
 
 function buildFuturePartyHtml(data: FuturePartyEmailData): string {
   const label = genderLabel[data.kidGender];
-  // Slice to YYYY-MM-DD first — DB may return a full ISO timestamp
-  const formattedDate = dateFormatter.format(new Date(`${data.partyDate.slice(0, 10)}T00:00`));
+  // partyDate may be a Date object or a string — normalise to a local-noon Date
+  const partyDateStr = typeof data.partyDate === 'string' ? data.partyDate : (data.partyDate as unknown as Date).toISOString();
+  const formattedDate = dateFormatter.format(new Date(`${partyDateStr.slice(0, 10)}T12:00`));
 
   return `<!DOCTYPE html>
 <html>
@@ -166,7 +167,8 @@ function buildFuturePartyHtml(data: FuturePartyEmailData): string {
 
 export function buildFuturePartyText(data: FuturePartyEmailData): string {
   const label = genderLabel[data.kidGender];
-  const formattedDate = dateFormatter.format(new Date(`${data.partyDate.slice(0, 10)}T00:00`));
+  const partyDateStr = typeof data.partyDate === 'string' ? data.partyDate : (data.partyDate as unknown as Date).toISOString();
+  const formattedDate = dateFormatter.format(new Date(`${partyDateStr.slice(0, 10)}T12:00`));
 
   return [
     "Your Goodie Bag is Ready!",
