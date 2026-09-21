@@ -52,6 +52,7 @@ import SearchIcon from '@mui/icons-material/Search'
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
+import { SendEmailModal } from './SendEmailModal'
 import { adminApi, type AlternativeProductDto, type GiftBagAlternativeDto } from '../../api/admin'
 import { ConfiguratorVisual } from '../../components/ConfiguratorVisual'
 import { IncludedItemCard } from '../../components/IncludedItemCard'
@@ -111,10 +112,9 @@ export function AdminBundlePreviewPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
 
   // Send link state (AC-FP-A.3, AC-FP-A.4)
-  const [sending,       setSending]       = useState(false)
-  const [sendError,     setSendError]     = useState<string | null>(null)
-  const [sentAt,        setSentAt]        = useState<string | null>(null)
-  const [savedSnackbar, setSavedSnackbar] = useState(false)
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [sentAt,         setSentAt]         = useState<string | null>(null)
+  const [savedSnackbar,  setSavedSnackbar]  = useState(false)
 
   // Swap modal state (AC-FP-C.1 – AC-FP-C.9)
   const [swapSlotCode,    setSwapSlotCode]    = useState<string | null>(null)
@@ -231,22 +231,6 @@ export function AdminBundlePreviewPage() {
 
     return () => { cancelled = true }
   }, [swapGiftBagOpen, bundlePublicId, authHeader])
-
-  // ── Send Link (AC-FP-A.4) ─────────────────────────────────────────────────
-
-  async function handleSendLink() {
-    if (!authHeader || !futurePartyId) return
-    setSending(true)
-    setSendError(null)
-    try {
-      const { sentAt: newSentAt } = await adminApi.sendFuturePartyLink(authHeader, Number(futurePartyId))
-      setSentAt(newSentAt)
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Failed to send email.')
-    } finally {
-      setSending(false)
-    }
-  }
 
   // ── Swap open/close helpers ───────────────────────────────────────────────
 
@@ -722,7 +706,6 @@ export function AdminBundlePreviewPage() {
               setSavedSnackbar(true)
               setTimeout(() => navigate('/admin/future-parties'), 1200)
             }}
-            disabled={sending}
           >
             Save Bundle
           </Button>
@@ -732,21 +715,13 @@ export function AdminBundlePreviewPage() {
             <Button
               variant="contained"
               color="primary"
-              disabled={sending}
-              onClick={handleSendLink}
-              startIcon={sending ? <CircularProgress size={16} color="inherit" /> : undefined}
+              onClick={() => setEmailModalOpen(true)}
             >
-              {sending ? 'Sending…' : sentAt ? 'Save and Re-send' : 'Save and Send'}
+              {sentAt ? 'Save and Re-send' : 'Save and Send'}
             </Button>
           )}
         </Box>
 
-        {/* Send error */}
-        {sendError && (
-          <Alert severity="error" sx={{ mt: 2 }}>
-            {sendError}
-          </Alert>
-        )}
       </Container>
 
       <Snackbar
@@ -755,6 +730,17 @@ export function AdminBundlePreviewPage() {
         onClose={() => setSavedSnackbar(false)}
         message="Bundle saved"
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
+
+      <SendEmailModal
+        open={emailModalOpen}
+        futurePartyId={futurePartyId ? Number(futurePartyId) : null}
+        authHeader={authHeader ?? ''}
+        onClose={() => setEmailModalOpen(false)}
+        onSent={(sentAt) => {
+          setSentAt(sentAt)
+          setEmailModalOpen(false)
+        }}
       />
 
       {/* ── Swap modal (AC-FP-C.2 – AC-FP-C.9) ─────────────────────────── */}

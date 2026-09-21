@@ -113,11 +113,16 @@ function buildHtml(order: OrderEmailData): string {
  * Data required to send a personalised bundle link to a future party parent.
  * Requirements: AC6.4, design.md §3.6
  */
+export const FUTURE_PARTY_EMAIL_SUBJECT = 'Your personalised goodie bag is ready!';
+
 export interface FuturePartyEmailData {
-  toEmail:   string;
-  partyDate: string;   // 'YYYY-MM-DD'
-  kidGender: 'BOY' | 'GIRL' | 'MIXED';
-  bundleUrl: string;
+  toEmail:          string;
+  partyDate:        string;   // 'YYYY-MM-DD'
+  kidGender:        'BOY' | 'GIRL' | 'MIXED';
+  bundleUrl:        string;
+  extraRecipients?: string[];   // CC addresses
+  subjectOverride?: string;
+  textOverride?:    string;
 }
 
 const genderLabel: Record<FuturePartyEmailData['kidGender'], string> = {
@@ -159,7 +164,7 @@ function buildFuturePartyHtml(data: FuturePartyEmailData): string {
 </html>`;
 }
 
-function buildFuturePartyText(data: FuturePartyEmailData): string {
+export function buildFuturePartyText(data: FuturePartyEmailData): string {
   const label = genderLabel[data.kidGender];
   const formattedDate = dateFormatter.format(new Date(`${data.partyDate}T00:00`));
 
@@ -185,19 +190,21 @@ function buildFuturePartyText(data: FuturePartyEmailData): string {
  * Design: specs/future-party/design.md §3.6, §6
  */
 export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<void> {
-  const from = process.env.EMAIL_FROM ?? 'orders@example.com';
-  const subject = 'Your personalised goodie bag is ready!';
-  const textBody = buildFuturePartyText(data);
+  const from     = process.env.EMAIL_FROM ?? 'orders@example.com';
+  const subject  = data.subjectOverride ?? FUTURE_PARTY_EMAIL_SUBJECT;
+  const textBody = data.textOverride ?? buildFuturePartyText(data);
+
+  const toAddresses = [data.toEmail, ...(data.extraRecipients ?? [])];
 
   console.log('[email] Sending future-party email', {
     from,
-    to: data.toEmail,
+    to: toAddresses,
     subject,
     body: textBody,
   });
 
   await sesClient.send(new SendEmailCommand({
-    Destination: { ToAddresses: [data.toEmail] },
+    Destination: { ToAddresses: toAddresses },
     Source: from,
     Message: {
       Subject: { Data: subject, Charset: 'UTF-8' },
@@ -207,7 +214,7 @@ export async function sendFuturePartyEmail(data: FuturePartyEmailData): Promise<
       },
     },
   }));
-  console.log('[email] Future-party email sent to', data.toEmail);
+  console.log('[email] Future-party email sent to', toAddresses);
   // No try/catch — errors propagate to the admin route handler (AC6.5).
 }
 

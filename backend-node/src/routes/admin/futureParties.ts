@@ -21,7 +21,7 @@ import {
   recordSend,
 } from '../../repositories/futureParties.js';
 import { toFuturePartyDto } from '../futureParties.js';
-import { sendFuturePartyEmail } from '../../lib/email.js';
+import { FUTURE_PARTY_EMAIL_SUBJECT, buildFuturePartyText, sendFuturePartyEmail } from '../../lib/email.js';
 
 export const adminFuturePartiesRouter = Router();
 
@@ -174,6 +174,72 @@ adminFuturePartiesRouter.patch(
   },
 );
 
+// ─── GET /:id/email-preview ───────────────────────────────────────────────────
+
+/**
+ * Returns the pre-filled email subject and text body for admin review/editing
+ * before the actual send is triggered.
+ */
+adminFuturePartiesRouter.get(
+  '/:id/email-preview',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        res.status(400).json({
+          type:     'about:validation-error',
+          title:    'Validation Error',
+          status:   400,
+          detail:   'id must be an integer.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const row = await findFuturePartyById(id);
+      if (!row) {
+        res.status(404).json({
+          type:     'about:not-found',
+          title:    'Not Found',
+          status:   404,
+          detail:   `Future party submission not found: ${id}`,
+          instance: req.path,
+        });
+        return;
+      }
+
+      if (row.linked_bundle_public_id === null) {
+        res.status(422).json({
+          type:     'about:validation-error',
+          title:    'Unprocessable Entity',
+          status:   422,
+          detail:   'No bundle linked to this submission.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
+      const bundleUrl   = `${frontendUrl}/bundleCustomization/${row.linked_bundle_public_id}`;
+      const textBody    = buildFuturePartyText({
+        toEmail:   row.email,
+        partyDate: row.party_date,
+        kidGender: row.kid_gender as 'BOY' | 'GIRL' | 'MIXED',
+        bundleUrl,
+      });
+
+      res.json({
+        toEmail:   row.email,
+        subject:   FUTURE_PARTY_EMAIL_SUBJECT,
+        textBody,
+        bundleUrl,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // ─── POST /:id/send-link ──────────────────────────────────────────────────────
 
 /**
@@ -223,15 +289,24 @@ adminFuturePartiesRouter.post(
         return;
       }
 
+      const {
+        extraRecipients = [],
+        subject: subjectOverride,
+        textBody: textOverride,
+      } = req.body as { extraRecipients?: string[]; subject?: string; textBody?: string };
+
       const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
       const bundleUrl   = `${frontendUrl}/bundleCustomization/${row.linked_bundle_public_id}`;
 
       // sendFuturePartyEmail throws on SES failure — do NOT catch here (AC6.5)
       await sendFuturePartyEmail({
-        toEmail:   row.email,
-        partyDate: row.party_date,
-        kidGender: row.kid_gender as 'BOY' | 'GIRL' | 'MIXED',
+        toEmail:         row.email,
+        partyDate:       row.party_date,
+        kidGender:       row.kid_gender as 'BOY' | 'GIRL' | 'MIXED',
         bundleUrl,
+        extraRecipients: extraRecipients.length > 0 ? extraRecipients : undefined,
+        subjectOverride: subjectOverride || undefined,
+        textOverride:    textOverride || undefined,
       });
 
       // Only stamp bundle_sent_at after a confirmed successful send

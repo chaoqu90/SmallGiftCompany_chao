@@ -113451,6 +113451,47 @@ async function patchBundleItem(bundlePublicId, slotCode, product) {
     `;
   });
 }
+async function patchBundleUpgrade(bundlePublicId, tier, product) {
+  if (tier === "standard") {
+    await sql`
+      UPDATE generated_bundle_upgrade
+      SET
+        standard_product_id            = ${product.id},
+        standard_product_name_snapshot = ${product.name},
+        standard_sku_snapshot          = ${product.sku},
+        standard_cost_snapshot         = ${product.cost}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+    `;
+  } else {
+    await sql`
+      UPDATE generated_bundle_upgrade
+      SET
+        product_id            = ${product.id},
+        product_name_snapshot = ${product.name},
+        sku_snapshot          = ${product.sku},
+        cost_snapshot         = ${product.cost}
+      WHERE generated_bundle_id = (
+        SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+      )
+    `;
+  }
+}
+async function patchBundleGiftBag(bundlePublicId, giftBagOption) {
+  await sql`
+    UPDATE generated_bundle_gift_bag
+    SET
+      gift_bag_option_id               = ${giftBagOption.id},
+      name_snapshot                    = ${giftBagOption.name},
+      cost_snapshot                    = ${giftBagOption.cost},
+      retail_price_adjustment_snapshot = ${giftBagOption.retail_price_adjustment},
+      is_default                       = ${giftBagOption.is_default}
+    WHERE generated_bundle_id = (
+      SELECT id FROM generated_bundle WHERE public_id = ${bundlePublicId}
+    )
+  `;
+}
 async function listRecentBundles(limit = 200) {
   return sql`
     SELECT gb.*,
@@ -115290,6 +115331,7 @@ function buildHtml(order) {
     </html>
   `;
 }
+var FUTURE_PARTY_EMAIL_SUBJECT = "Your personalised goodie bag is ready!";
 var genderLabel = {
   BOY: "boy",
   GIRL: "girl",
@@ -115341,16 +115383,17 @@ function buildFuturePartyText(data) {
 }
 async function sendFuturePartyEmail(data) {
   const from = process.env.EMAIL_FROM ?? "orders@example.com";
-  const subject = "Your personalised goodie bag is ready!";
-  const textBody = buildFuturePartyText(data);
+  const subject = data.subjectOverride ?? FUTURE_PARTY_EMAIL_SUBJECT;
+  const textBody = data.textOverride ?? buildFuturePartyText(data);
+  const toAddresses = [data.toEmail, ...data.extraRecipients ?? []];
   console.log("[email] Sending future-party email", {
     from,
-    to: data.toEmail,
+    to: toAddresses,
     subject,
     body: textBody
   });
   await sesClient.send(new import_client_ses.SendEmailCommand({
-    Destination: { ToAddresses: [data.toEmail] },
+    Destination: { ToAddresses: toAddresses },
     Source: from,
     Message: {
       Subject: { Data: subject, Charset: "UTF-8" },
@@ -115360,7 +115403,7 @@ async function sendFuturePartyEmail(data) {
       }
     }
   }));
-  console.log("[email] Future-party email sent to", data.toEmail);
+  console.log("[email] Future-party email sent to", toAddresses);
 }
 function buildSignupPromotionHtml(data) {
   return `<!DOCTYPE html>
@@ -134651,8 +134694,8 @@ adminFuturePartiesRouter.patch(
     }
   }
 );
-adminFuturePartiesRouter.post(
-  "/:id/send-link",
+adminFuturePartiesRouter.get(
+  "/:id/email-preview",
   async (req, res, next) => {
     try {
       const id = parseInt(req.params.id, 10);
@@ -134689,11 +134732,74 @@ adminFuturePartiesRouter.post(
       }
       const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
       const bundleUrl = `${frontendUrl}/bundleCustomization/${row.linked_bundle_public_id}`;
-      await sendFuturePartyEmail({
+      const textBody = buildFuturePartyText({
         toEmail: row.email,
         partyDate: row.party_date,
         kidGender: row.kid_gender,
         bundleUrl
+      });
+      res.json({
+        toEmail: row.email,
+        subject: FUTURE_PARTY_EMAIL_SUBJECT,
+        textBody,
+        bundleUrl
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminFuturePartiesRouter.post(
+  "/:id/send-link",
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Validation Error",
+          status: 400,
+          detail: "id must be an integer.",
+          instance: req.path
+        });
+        return;
+      }
+      const row = await findFuturePartyById(id);
+      if (!row) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Future party submission not found: ${id}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (row.linked_bundle_public_id === null) {
+        res.status(422).json({
+          type: "about:validation-error",
+          title: "Unprocessable Entity",
+          status: 422,
+          detail: "No bundle linked to this submission.",
+          instance: req.path
+        });
+        return;
+      }
+      const {
+        extraRecipients = [],
+        subject: subjectOverride,
+        textBody: textOverride
+      } = req.body;
+      const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
+      const bundleUrl = `${frontendUrl}/bundleCustomization/${row.linked_bundle_public_id}`;
+      await sendFuturePartyEmail({
+        toEmail: row.email,
+        partyDate: row.party_date,
+        kidGender: row.kid_gender,
+        bundleUrl,
+        extraRecipients: extraRecipients.length > 0 ? extraRecipients : void 0,
+        subjectOverride: subjectOverride || void 0,
+        textOverride: textOverride || void 0
       });
       const updated = await recordSend(id);
       res.json({ sentAt: updated.bundle_sent_at });
@@ -134825,6 +134931,246 @@ adminGeneratedBundlesRouter.patch(
         return;
       }
       await patchBundleItem(bundlePublicId, slotCode, product);
+      const updated = await getByPublicId(bundlePublicId);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminGeneratedBundlesRouter.get(
+  "/:bundlePublicId/upgrade/alternatives",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId } = req.params;
+      const tier = req.query.tier;
+      if (tier !== "standard" && tier !== "upgraded") {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Query param 'tier' must be 'standard' or 'upgraded'.",
+          instance: req.path
+        });
+        return;
+      }
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!bundle.upgrade) {
+        res.json([]);
+        return;
+      }
+      const sku = tier === "standard" ? bundle.upgrade.standardSku : bundle.upgrade.upgradedSku;
+      if (!sku) {
+        res.json([]);
+        return;
+      }
+      const productRows = await sql`
+        SELECT form_factor FROM product WHERE sku = ${sku} LIMIT 1
+      `;
+      if (productRows.length === 0) {
+        res.json([]);
+        return;
+      }
+      const formFactor = productRows[0].form_factor;
+      const agg = await findBundleByPublicId(bundlePublicId);
+      const excludeProductIds = agg ? agg.items.map((i5) => i5.product_id) : [];
+      const alternatives = await findEligibleAlternativesForSlot(formFactor, excludeProductIds);
+      res.json(alternatives.map((p3) => ({
+        id: p3.id,
+        name: p3.name,
+        sku: p3.sku,
+        formFactor: p3.form_factor,
+        retailPrice: p3.retail_price,
+        cost: p3.cost,
+        imageUrl: p3.image_url,
+        inventoryQuantity: p3.inventory_quantity
+      })));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminGeneratedBundlesRouter.patch(
+  "/:bundlePublicId/upgrade",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId } = req.params;
+      const { tier, productId } = req.body;
+      if (tier !== "standard" && tier !== "upgraded") {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Body field 'tier' must be 'standard' or 'upgraded'.",
+          instance: req.path
+        });
+        return;
+      }
+      if (typeof productId !== "number") {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Body field 'productId' must be a number.",
+          instance: req.path
+        });
+        return;
+      }
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!bundle.upgrade) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Bundle has no upgrade.",
+          instance: req.path
+        });
+        return;
+      }
+      const product = await getProductById(productId);
+      if (!product) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: `Product not found: ${productId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!product.active) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Product is not active.",
+          instance: req.path
+        });
+        return;
+      }
+      if (product.inventory_quantity < 1) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Product has no available inventory.",
+          instance: req.path
+        });
+        return;
+      }
+      await patchBundleUpgrade(bundlePublicId, tier, product);
+      const updated = await getByPublicId(bundlePublicId);
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminGeneratedBundlesRouter.get(
+  "/:bundlePublicId/giftbag/alternatives",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId } = req.params;
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!bundle.giftBag) {
+        res.json([]);
+        return;
+      }
+      const agg = await findBundleByPublicId(bundlePublicId);
+      const currentGiftBagOptionId = agg?.giftBag?.gift_bag_option_id ?? null;
+      const allOptions = await listGiftBagOptions();
+      const alternatives = currentGiftBagOptionId !== null ? allOptions.filter((o3) => o3.id !== currentGiftBagOptionId) : allOptions;
+      res.json(alternatives.map((o3) => ({
+        id: o3.id,
+        name: o3.name,
+        cost: o3.cost,
+        retailPriceAdjustment: o3.retail_price_adjustment
+      })));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminGeneratedBundlesRouter.patch(
+  "/:bundlePublicId/giftbag",
+  async (req, res, next) => {
+    try {
+      const { bundlePublicId } = req.params;
+      const { giftBagOptionId } = req.body;
+      if (typeof giftBagOptionId !== "number") {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Body field 'giftBagOptionId' must be a number.",
+          instance: req.path
+        });
+        return;
+      }
+      const bundle = await getByPublicId(bundlePublicId);
+      if (!bundle) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Bundle not found: ${bundlePublicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (!bundle.giftBag) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "Bundle has no gift bag.",
+          instance: req.path
+        });
+        return;
+      }
+      const allOptions = await listGiftBagOptions();
+      const giftBagOption = allOptions.find((o3) => o3.id === giftBagOptionId);
+      if (!giftBagOption || !giftBagOption.active) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: `Gift bag option not found or not active: ${giftBagOptionId}`,
+          instance: req.path
+        });
+        return;
+      }
+      await patchBundleGiftBag(bundlePublicId, giftBagOption);
       const updated = await getByPublicId(bundlePublicId);
       res.json(updated);
     } catch (err) {

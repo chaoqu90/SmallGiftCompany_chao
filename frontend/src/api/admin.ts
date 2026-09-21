@@ -146,6 +146,13 @@ export interface AffinitiesPayload {
  * Requirements: AC-FP-C.3, AC-FP-C.5
  * Design: specs/future-party/design.md §3.8
  */
+export interface EmailPreview {
+  toEmail:   string
+  subject:   string
+  textBody:  string
+  bundleUrl: string
+}
+
 export interface AlternativeProductDto {
   id:                number
   name:              string
@@ -396,10 +403,19 @@ export const adminApi = {
       body: JSON.stringify({ bundlePublicId }),
     }),
 
+  /** GET /admin/api/future-parties/:id/email-preview — get pre-filled email for admin review */
+  getEmailPreview: (auth: string, id: number) =>
+    adminRequest<EmailPreview>(`/admin/api/future-parties/${id}/email-preview`, auth),
+
   /** POST /admin/api/future-parties/:id/send-link — trigger the personalised email */
-  sendFuturePartyLink: (auth: string, id: number) =>
+  sendFuturePartyLink: (auth: string, id: number, opts?: {
+    extraRecipients?: string[]
+    subject?: string
+    textBody?: string
+  }) =>
     adminRequest<{ sentAt: string }>(`/admin/api/future-parties/${id}/send-link`, auth, {
       method: 'POST',
+      body: JSON.stringify(opts ?? {}),
     }),
 
   /** POST /admin/api/future-parties/redeem — redeem a promotion by 6-digit code */

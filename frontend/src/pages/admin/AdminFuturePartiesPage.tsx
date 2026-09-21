@@ -40,6 +40,7 @@ import { AdminNav } from './AdminNav'
 import { adminApi, type AdminFutureParty } from '../../api/admin'
 import { CreateBundleForFuturePartyDialog } from './CreateBundleForFuturePartyDialog'
 import { ApplyBundleDialog } from './ApplyBundleDialog'
+import { SendEmailModal } from './SendEmailModal'
 
 // ─── Date formatting helpers ──────────────────────────────────────────────────
 
@@ -77,9 +78,8 @@ export function AdminFuturePartiesPage() {
   const [applyDialogOpen, setApplyDialogOpen] = useState(false)
   const [applyRow,        setApplyRow]        = useState<AdminFutureParty | null>(null)
 
-  // Send link state (AC6.1, AC6.2, AC6.6)
-  const [sendingId,  setSendingId]  = useState<number | null>(null)
-  const [sendError,  setSendError]  = useState<{ id: number; msg: string } | null>(null)
+  // Email modal state (AC6.1, AC6.2, AC6.6)
+  const [emailModalId, setEmailModalId] = useState<number | null>(null)
 
   // Success snackbar
   const [snackbar, setSnackbar] = useState<string | null>(null)
@@ -96,25 +96,6 @@ export function AdminFuturePartiesPage() {
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [authHeader])
-
-  // ── Send / Re-send link (AC6.3, AC6.6) ────────────────────────────────────
-
-  async function handleSendLink(id: number) {
-    if (!authHeader) return
-    setSendingId(id)
-    setSendError(null)
-    try {
-      const { sentAt } = await adminApi.sendFuturePartyLink(authHeader, id)
-      setSubmissions(prev => prev.map(s =>
-        s.id === id ? { ...s, bundleSentAt: sentAt } : s,
-      ))
-      setSnackbar('Email sent successfully!')
-    } catch {
-      setSendError({ id, msg: 'Failed to send email. Please try again.' })
-    } finally {
-      setSendingId(null)
-    }
-  }
 
   // ── onLinked callback from generate dialog — navigate to preview (AC5.4, AC5.6, design §5.7) ──
 
@@ -229,21 +210,13 @@ export function AdminFuturePartiesPage() {
 
                           {/* Send / Re-send (AC6.1, AC6.2) */}
                           <Tooltip title={row.bundleSentAt ? 'Re-send Link' : 'Send Link'}>
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                disabled={sendingId === row.id}
-                                onClick={() => handleSendLink(row.id)}
-                              >
-                                {sendingId === row.id
-                                  ? <CircularProgress size={16} />
-                                  : row.bundleSentAt
-                                    ? <ReplayIcon fontSize="small" />
-                                    : <SendIcon fontSize="small" />
-                                }
-                              </IconButton>
-                            </span>
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => setEmailModalId(row.id)}
+                            >
+                              {row.bundleSentAt ? <ReplayIcon fontSize="small" /> : <SendIcon fontSize="small" />}
+                            </IconButton>
                           </Tooltip>
                         </>
                       ) : (
@@ -276,12 +249,6 @@ export function AdminFuturePartiesPage() {
                         </>
                       )}
 
-                      {/* Per-row send error (AC6.6) */}
-                      {sendError?.id === row.id && (
-                        <Alert severity="error" sx={{ mt: 0.5, py: 0 }}>
-                          {sendError.msg}
-                        </Alert>
-                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -308,6 +275,23 @@ export function AdminFuturePartiesPage() {
         authHeader={authHeader ?? ''}
         onClose={() => { setApplyDialogOpen(false); setApplyRow(null) }}
         onApplied={handleApplied}
+      />
+
+      {/* Email compose modal (AC6.1, AC6.2, AC6.3) */}
+      <SendEmailModal
+        open={emailModalId !== null}
+        futurePartyId={emailModalId}
+        authHeader={authHeader ?? ''}
+        onClose={() => setEmailModalId(null)}
+        onSent={(sentAt) => {
+          if (emailModalId !== null) {
+            setSubmissions(prev => prev.map(s =>
+              s.id === emailModalId ? { ...s, bundleSentAt: sentAt } : s,
+            ))
+          }
+          setEmailModalId(null)
+          setSnackbar('Email sent successfully!')
+        }}
       />
 
       {/* Success snackbar (AC5.6, AC6.6) */}
