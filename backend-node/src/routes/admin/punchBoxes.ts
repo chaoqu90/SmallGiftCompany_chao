@@ -19,6 +19,7 @@ import {
   findPunchBoxByPublicId,
   patchPunchBoxItem,
   markPunchBoxOrdered,
+  deletePunchBox,
   loadProductsByIds,
   type PunchBoxAggregate,
 } from '../../repositories/punchBoxes.js';
@@ -66,7 +67,7 @@ function toPunchBoxListDto(box: PunchBoxRow) {
   };
 }
 
-function toPunchBoxItemDto(item: PunchBoxItemRow) {
+function toPunchBoxItemDto(item: PunchBoxItemRow & { image_url?: string | null }) {
   return {
     itemId:              item.id,
     productId:           item.product_id,
@@ -75,6 +76,7 @@ function toPunchBoxItemDto(item: PunchBoxItemRow) {
     costSnapshotRmb:     parseFloat(item.cost_snapshot),
     quantity:            item.quantity,
     displayOrder:        item.display_order,
+    imageUrl:            item.image_url ?? null,
   };
 }
 
@@ -386,6 +388,41 @@ adminPunchBoxesRouter.post(
       await markPunchBoxOrdered(agg.punchBox.id, agg.items);
 
       res.json({ publicId, status: 'ORDERED' });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── DELETE /:publicId — Delete punch box ─────────────────────────────────────
+
+/**
+ * Deletes an ASSIGNED punch box and clears the future party link.
+ * 404 if not found; 409 if already ORDERED (irreversible).
+ */
+adminPunchBoxesRouter.delete(
+  '/:publicId',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { publicId } = req.params;
+      const result = await deletePunchBox(publicId);
+
+      if (result === 'not_found') {
+        res.status(404).json({
+          type: 'about:not-found', title: 'Not Found', status: 404,
+          detail: `Punch box not found: ${publicId}`, instance: req.path,
+        });
+        return;
+      }
+      if (result === 'ordered') {
+        res.status(409).json({
+          type: 'about:conflict', title: 'Conflict', status: 409,
+          detail: 'Cannot delete an ordered punch box.', instance: req.path,
+        });
+        return;
+      }
+
+      res.status(204).send();
     } catch (err) {
       next(err);
     }

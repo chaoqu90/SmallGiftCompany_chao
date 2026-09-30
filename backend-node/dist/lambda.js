@@ -136101,9 +136101,11 @@ async function findPunchBoxByPublicId(publicId) {
   if (boxes.length === 0) return null;
   const box = boxes[0];
   const items = await sql`
-    SELECT * FROM punch_box_item
-    WHERE punch_box_id = ${box.id}
-    ORDER BY display_order ASC
+    SELECT pbi.*, p.image_url
+    FROM punch_box_item pbi
+    LEFT JOIN product p ON p.id = pbi.product_id
+    WHERE pbi.punch_box_id = ${box.id}
+    ORDER BY pbi.display_order ASC
   `;
   return { punchBox: box, items };
 }
@@ -136179,13 +136181,30 @@ async function markPunchBoxOrdered(id, items) {
     `;
   });
 }
+async function deletePunchBox(publicId) {
+  return await sql.begin(async (tx) => {
+    const boxes = await tx`
+      SELECT * FROM punch_box WHERE public_id = ${publicId}
+    `;
+    if (boxes.length === 0) return "not_found";
+    const box = boxes[0];
+    if (box.status === "ORDERED") return "ordered";
+    await tx`
+      UPDATE future_parties
+      SET linked_punch_box_id = NULL
+      WHERE linked_punch_box_id = ${box.id}
+    `;
+    await tx`DELETE FROM punch_box WHERE id = ${box.id}`;
+    return "deleted";
+  });
+}
 async function loadProductsByIds(productIds) {
   if (productIds.length === 0) return /* @__PURE__ */ new Map();
   const rows = await sql`
-    SELECT * FROM product WHERE id = ANY(${productIds})
+    SELECT * FROM product WHERE id IN ${sql(productIds)}
   `;
   const map3 = /* @__PURE__ */ new Map();
-  for (const row of rows) map3.set(row.id, row);
+  for (const row of rows) map3.set(Number(row.id), row);
   return map3;
 }
 
@@ -136229,7 +136248,8 @@ function toPunchBoxItemDto(item) {
     skuSnapshot: item.sku_snapshot,
     costSnapshotRmb: parseFloat(item.cost_snapshot),
     quantity: item.quantity,
-    displayOrder: item.display_order
+    displayOrder: item.display_order,
+    imageUrl: item.image_url ?? null
   };
 }
 function toPunchBoxDetailDto(agg) {
@@ -136467,6 +136487,38 @@ adminPunchBoxesRouter.post(
       }
       await markPunchBoxOrdered(agg.punchBox.id, agg.items);
       res.json({ publicId, status: "ORDERED" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminPunchBoxesRouter.delete(
+  "/:publicId",
+  async (req, res, next) => {
+    try {
+      const { publicId } = req.params;
+      const result = await deletePunchBox(publicId);
+      if (result === "not_found") {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Punch box not found: ${publicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (result === "ordered") {
+        res.status(409).json({
+          type: "about:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "Cannot delete an ordered punch box.",
+          instance: req.path
+        });
+        return;
+      }
+      res.status(204).send();
     } catch (err) {
       next(err);
     }

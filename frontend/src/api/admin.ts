@@ -213,6 +213,7 @@ export interface AdminPunchBoxDetail extends AdminPunchBoxListItem {
     costSnapshotRmb:     number
     quantity:            number
     displayOrder:        number
+    imageUrl:            string | null
   }[]
 }
 
@@ -614,4 +615,8 @@ export const adminApi = {
       auth,
       { method: 'POST' },
     ),
+
+  /** DELETE /admin/api/punch-boxes/:publicId — delete an ASSIGNED punch box */
+  deletePunchBox: (auth: string, publicId: string) =>
+    adminRequest<void>(`/admin/api/punch-boxes/${publicId}`, auth, { method: 'DELETE' }),
 }

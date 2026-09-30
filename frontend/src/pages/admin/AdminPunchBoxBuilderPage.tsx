@@ -238,14 +238,13 @@ export function AdminPunchBoxBuilderPage() {
     const items = Array.from(selectedItems.values()).map(({ product, quantity }) => ({
       productName: product.name,
       quantity,
+      imageUrl:    product.imageUrl ?? null,
     }))
     downloadPunchBoxHtml({
-      publicId:     null,
+      publicId:    null,
       slotCount,
+      retailPrice: parseFloat(retailPrice) || 0,
       items,
-      totalCogsUsd,
-      profitUsd:    parseFloat(profit) || 0,
-      retailPrice:  parseFloat(retailPrice) || 0,
     })
   }
 

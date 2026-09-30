@@ -39,6 +39,7 @@ import {
   Typography,
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
+import DeleteIcon from '@mui/icons-material/Delete'
 import SearchIcon from '@mui/icons-material/Search'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
@@ -73,6 +74,11 @@ export function AdminPunchBoxEditPage() {
   const [orderDialogOpen, setOrderDialogOpen] = useState(false)
   const [ordering, setOrdering] = useState(false)
   const [orderError, setOrderError] = useState<string | null>(null)
+
+  // Delete dialog
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const [snackbar, setSnackbar] = useState<string | null>(null)
 
@@ -154,13 +160,31 @@ export function AdminPunchBoxEditPage() {
   function handleGeneratePreview() {
     if (!punchBox) return
     downloadPunchBoxHtml({
-      publicId:     punchBox.publicId,
-      slotCount:    punchBox.slotCount,
-      items:        punchBox.items.map(i => ({ productName: i.productNameSnapshot, quantity: i.quantity })),
-      totalCogsUsd: punchBox.totalCogsUsd,
-      profitUsd:    punchBox.profitUsd,
-      retailPrice:  punchBox.retailPrice,
+      publicId:    punchBox.publicId,
+      slotCount:   punchBox.slotCount,
+      retailPrice: punchBox.retailPrice,
+      items:       punchBox.items.map(i => ({
+        productName: i.productNameSnapshot,
+        quantity:    i.quantity,
+        imageUrl:    i.imageUrl,
+      })),
     })
+  }
+
+  async function handleDelete() {
+    if (!authHeader || !publicId) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await adminApi.deletePunchBox(authHeader, publicId)
+      setDeleteDialogOpen(false)
+      setSnackbar('Punch box deleted.')
+      setTimeout(() => navigate('/admin/bundles'), 800)
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete punch box.')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   if (loading) {
@@ -371,14 +395,26 @@ export function AdminPunchBoxEditPage() {
               </Button>
 
               {isAssigned && (
-                <Button
-                  variant="contained"
-                  color="warning"
-                  fullWidth
-                  onClick={() => setOrderDialogOpen(true)}
-                >
-                  Mark as Ordered
-                </Button>
+                <>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    fullWidth
+                    sx={{ mb: 1 }}
+                    onClick={() => setOrderDialogOpen(true)}
+                  >
+                    Mark as Ordered
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    fullWidth
+                    startIcon={<DeleteIcon />}
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    Delete Punch Box
+                  </Button>
+                </>
               )}
             </Paper>
           </Grid2>
@@ -400,6 +436,25 @@ export function AdminPunchBoxEditPage() {
           <Button onClick={handleConfirmOrder} color="warning" variant="contained" disabled={ordering}>
             {ordering ? <CircularProgress size={16} color="inherit" sx={{ mr: 1 }} /> : null}
             Mark as Ordered
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteDialogOpen} onClose={() => !deleting && setDeleteDialogOpen(false)}>
+        <DialogTitle>Delete Punch Box?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will permanently delete this punch box and remove it from the linked future party.
+            The future party can then have a new punch box created for it.
+          </DialogContentText>
+          {deleteError && <Alert severity="error" sx={{ mt: 2 }}>{deleteError}</Alert>}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained" disabled={deleting}>
+            {deleting ? <CircularProgress size={16} color="inherit" sx={{ mr: 1 }} /> : null}
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

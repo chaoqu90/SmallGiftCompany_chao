@@ -140,10 +140,12 @@ export async function findPunchBoxByPublicId(
   if (boxes.length === 0) return null;
 
   const box = boxes[0];
-  const items = await sql<PunchBoxItemRow[]>`
-    SELECT * FROM punch_box_item
-    WHERE punch_box_id = ${box.id}
-    ORDER BY display_order ASC
+  const items = await sql<(PunchBoxItemRow & { image_url: string | null })[]>`
+    SELECT pbi.*, p.image_url
+    FROM punch_box_item pbi
+    LEFT JOIN product p ON p.id = pbi.product_id
+    WHERE pbi.punch_box_id = ${box.id}
+    ORDER BY pbi.display_order ASC
   `;
 
   return { punchBox: box, items };
@@ -257,6 +259,36 @@ export async function markPunchBoxOrdered(
     await tx`
       UPDATE punch_box SET status = 'ORDERED' WHERE id = ${id}
     `;
+  });
+}
+
+// ─── deletePunchBox ───────────────────────────────────────────────────────────
+
+/**
+ * Deletes a punch box (and its items via CASCADE) and clears the
+ * linked_punch_box_id on the associated future_parties row if present.
+ * Only ASSIGNED punch boxes may be deleted.
+ * Returns true if a row was deleted, false if not found.
+ */
+export async function deletePunchBox(publicId: string): Promise<'deleted' | 'not_found' | 'ordered'> {
+  return await sql.begin(async tx => {
+    const boxes = await tx<PunchBoxRow[]>`
+      SELECT * FROM punch_box WHERE public_id = ${publicId}
+    `;
+    if (boxes.length === 0) return 'not_found';
+    const box = boxes[0];
+    if (box.status === 'ORDERED') return 'ordered';
+
+    // Clear the FK on future_parties first (no cascade for this direction)
+    await tx`
+      UPDATE future_parties
+      SET linked_punch_box_id = NULL
+      WHERE linked_punch_box_id = ${box.id}
+    `;
+
+    // Delete punch box (items cascade)
+    await tx`DELETE FROM punch_box WHERE id = ${box.id}`;
+    return 'deleted';
   });
 }
 
