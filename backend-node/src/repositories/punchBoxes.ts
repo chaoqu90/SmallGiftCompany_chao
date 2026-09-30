@@ -271,9 +271,9 @@ export async function loadProductsByIds(
 ): Promise<Map<number, ProductRow>> {
   if (productIds.length === 0) return new Map();
   const rows = await sql<ProductRow[]>`
-    SELECT * FROM product WHERE id = ANY(${productIds})
+    SELECT * FROM product WHERE id = ANY(${sql(productIds)})
   `;
   const map = new Map<number, ProductRow>();
-  for (const row of rows) map.set(row.id, row);
+  for (const row of rows) map.set(Number(row.id), row);
   return map;
 }
