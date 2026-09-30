@@ -12,7 +12,9 @@ import { AdminOrdersPage }         from './pages/admin/AdminOrdersPage'
 import { AdminOrderDetailPage }    from './pages/admin/AdminOrderDetailPage'
 import { AdminFuturePartiesPage }  from './pages/admin/AdminFuturePartiesPage'
 import { AdminBundlePreviewPage }  from './pages/admin/AdminBundlePreviewPage'
-import { AdminRedemptionPage }     from './pages/admin/AdminRedemptionPage'
+import { AdminRedemptionPage }         from './pages/admin/AdminRedemptionPage'
+import { AdminPunchBoxBuilderPage }    from './pages/admin/AdminPunchBoxBuilderPage'
+import { AdminPunchBoxEditPage }       from './pages/admin/AdminPunchBoxEditPage'
 // User-management routes (FEAT-001)
 import { LoginPage }                    from './pages/LoginPage'
 import { RegisterPage }                 from './pages/RegisterPage'
@@ -102,6 +104,9 @@ function App() {
           <Route path="/admin/future-parties"  element={<AdminFuturePartiesPage />} />
           <Route path="/admin/bundle-preview/:bundlePublicId" element={<AdminBundlePreviewPage />} />
           <Route path="/admin/redemption"      element={<AdminRedemptionPage />} />
+          {/* Punch Box routes (FEAT-PB) — /new must be before /:publicId */}
+          <Route path="/admin/punch-box/new"          element={<AdminPunchBoxBuilderPage />} />
+          <Route path="/admin/punch-box/:publicId"    element={<AdminPunchBoxEditPage />} />
         </Route>
       </Route>
     </Routes>

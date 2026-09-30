@@ -22727,7 +22727,7 @@ var require_application = __commonJS({
   "node_modules/express/lib/application.js"(exports, module) {
     "use strict";
     var finalhandler = require_finalhandler();
-    var Router19 = require_router();
+    var Router20 = require_router();
     var methods = require_methods();
     var middleware = require_init();
     var query = require_query();
@@ -22792,7 +22792,7 @@ var require_application = __commonJS({
     };
     app2.lazyrouter = function lazyrouter() {
       if (!this._router) {
-        this._router = new Router19({
+        this._router = new Router20({
           caseSensitive: this.enabled("case sensitive routing"),
           strict: this.enabled("strict routing")
         });
@@ -24656,7 +24656,7 @@ var require_express = __commonJS({
     var mixin = require_merge_descriptors();
     var proto = require_application();
     var Route = require_route();
-    var Router19 = require_router();
+    var Router20 = require_router();
     var req = require_request2();
     var res = require_response2();
     exports = module.exports = createApplication;
@@ -24679,7 +24679,7 @@ var require_express = __commonJS({
     exports.request = req;
     exports.response = res;
     exports.Route = Route;
-    exports.Router = Router19;
+    exports.Router = Router20;
     exports.json = bodyParser.json;
     exports.query = require_query();
     exports.raw = bodyParser.raw;
@@ -105511,7 +105511,7 @@ var require_xlsx = __commonJS({
 var import_serverless_http = __toESM(require_serverless_http(), 1);
 
 // src/app.ts
-var import_express19 = __toESM(require_express2(), 1);
+var import_express20 = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
 // src/middleware/cors.ts
@@ -134459,11 +134459,30 @@ async function findSignupPromotionByEmail(email) {
   `;
   return rows[0];
 }
-async function listFutureParties() {
+async function listFuturePartiesWithPunchBox() {
   return sql`
-    SELECT * FROM future_parties
-    ORDER BY submitted_at DESC
+    SELECT fp.*,
+           pb.public_id AS linked_punch_box_public_id
+    FROM future_parties fp
+    LEFT JOIN punch_box pb ON pb.id = fp.linked_punch_box_id
+    ORDER BY fp.submitted_at DESC
   `;
+}
+async function linkPunchBox(id, punchBoxId) {
+  const rows = await sql`
+    UPDATE future_parties
+    SET linked_punch_box_id = ${punchBoxId}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return void 0;
+  const withPb = await sql`
+    SELECT fp.*, pb.public_id AS linked_punch_box_public_id
+    FROM future_parties fp
+    LEFT JOIN punch_box pb ON pb.id = fp.linked_punch_box_id
+    WHERE fp.id = ${id}
+  `;
+  return withPb[0];
 }
 async function findFuturePartyById(id) {
   const rows = await sql`
@@ -134586,14 +134605,35 @@ futurePartiesRouter.post(
 
 // src/routes/admin/futureParties.ts
 var import_express15 = __toESM(require_express2(), 1);
+var LinkPunchBoxRequestSchema = external_exports.object({
+  punchBoxId: external_exports.number().int().positive()
+});
+function toFuturePartyDtoAdmin(row) {
+  const withPb = row;
+  return {
+    id: row.id,
+    email: row.email,
+    partyDate: row.party_date,
+    kidGender: row.kid_gender,
+    kidAge: row.kid_age,
+    submittedAt: row.submitted_at,
+    linkedBundlePublicId: row.linked_bundle_public_id,
+    bundleSentAt: row.bundle_sent_at,
+    source: row.source,
+    redemptionCode: row.redemption_code,
+    redeemedAt: row.redeemed_at,
+    linkedPunchBoxId: row.linked_punch_box_id ?? null,
+    linkedPunchBoxPublicId: withPb.linked_punch_box_public_id ?? null
+  };
+}
 var adminFuturePartiesRouter = (0, import_express15.Router)();
 adminFuturePartiesRouter.use(basicAuth);
 adminFuturePartiesRouter.get(
   "/",
   async (_req, res, next) => {
     try {
-      const rows = await listFutureParties();
-      res.json(rows.map(toFuturePartyDto));
+      const rows = await listFuturePartiesWithPunchBox();
+      res.json(rows.map(toFuturePartyDtoAdmin));
     } catch (err) {
       next(err);
     }
@@ -134646,7 +134686,7 @@ adminFuturePartiesRouter.post(
         });
         return;
       }
-      res.json(toFuturePartyDto(updated));
+      res.json(toFuturePartyDtoAdmin(updated));
     } catch (err) {
       next(err);
     }
@@ -134690,7 +134730,7 @@ adminFuturePartiesRouter.patch(
       }
       const { bundlePublicId } = LinkBundleRequestSchema.parse(req.body);
       const updated = await linkBundle(id, bundlePublicId);
-      res.json(toFuturePartyDto(updated));
+      res.json(toFuturePartyDtoAdmin(updated));
     } catch (err) {
       next(err);
     }
@@ -134805,6 +134845,50 @@ adminFuturePartiesRouter.post(
       });
       const updated = await recordSend(id);
       res.json({ sentAt: updated.bundle_sent_at });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminFuturePartiesRouter.patch(
+  "/:id/link-punch-box",
+  async (req, res, next) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Validation Error",
+          status: 400,
+          detail: "id must be an integer.",
+          instance: req.path
+        });
+        return;
+      }
+      const existing = await findFuturePartyById(id);
+      if (!existing) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Future party submission not found: ${id}`,
+          instance: req.path
+        });
+        return;
+      }
+      const { punchBoxId } = LinkPunchBoxRequestSchema.parse(req.body);
+      const updated = await linkPunchBox(id, punchBoxId);
+      if (!updated) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Future party submission not found: ${id}`,
+          instance: req.path
+        });
+        return;
+      }
+      res.json(toFuturePartyDtoAdmin(updated));
     } catch (err) {
       next(err);
     }
@@ -135950,12 +136034,451 @@ adminAnalyticsRouter.get(
   }
 );
 
+// src/routes/admin/punchBoxes.ts
+var import_express19 = __toESM(require_express2(), 1);
+
+// src/repositories/punchBoxes.ts
+import { randomBytes as randomBytes4 } from "crypto";
+async function savePunchBox(snapshot) {
+  const publicId = `pb_${randomBytes4(6).toString("hex")}`;
+  return await sql.begin(async (tx) => {
+    const boxes = await tx`
+      INSERT INTO punch_box (
+        public_id,
+        future_party_id,
+        slot_count,
+        total_cogs_usd,
+        retail_price,
+        profit_usd,
+        status,
+        created_at
+      ) VALUES (
+        ${publicId},
+        ${snapshot.futurePartyId ?? null},
+        ${snapshot.slotCount},
+        ${snapshot.totalCogsUsd},
+        ${snapshot.retailPrice},
+        ${snapshot.profitUsd},
+        'ASSIGNED',
+        now()
+      )
+      RETURNING *
+    `;
+    const box = boxes[0];
+    if (snapshot.items.length > 0) {
+      const itemRows = snapshot.items.map((item) => ({
+        punch_box_id: box.id,
+        product_id: item.productId,
+        product_name_snapshot: item.productNameSnapshot,
+        sku_snapshot: item.skuSnapshot,
+        cost_snapshot: item.costSnapshot,
+        quantity: item.quantity,
+        display_order: item.displayOrder
+      }));
+      await tx`INSERT INTO punch_box_item ${tx(itemRows)}`;
+    }
+    if (snapshot.futurePartyId) {
+      await tx`
+        UPDATE future_parties
+        SET linked_punch_box_id = ${box.id}
+        WHERE id = ${snapshot.futurePartyId}
+      `;
+    }
+    return box;
+  });
+}
+async function listPunchBoxes(limit = 200) {
+  return sql`
+    SELECT * FROM punch_box
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+}
+async function findPunchBoxByPublicId(publicId) {
+  const boxes = await sql`
+    SELECT * FROM punch_box WHERE public_id = ${publicId}
+  `;
+  if (boxes.length === 0) return null;
+  const box = boxes[0];
+  const items = await sql`
+    SELECT * FROM punch_box_item
+    WHERE punch_box_id = ${box.id}
+    ORDER BY display_order ASC
+  `;
+  return { punchBox: box, items };
+}
+async function patchPunchBoxItem(punchBoxId, itemId, patch) {
+  if (patch.quantity !== void 0 && patch.productId === void 0) {
+    await sql`
+      UPDATE punch_box_item
+      SET quantity = ${patch.quantity}
+      WHERE id = ${itemId} AND punch_box_id = ${punchBoxId}
+    `;
+  } else if (patch.productId !== void 0) {
+    if (patch.quantity !== void 0) {
+      await sql`
+        UPDATE punch_box_item
+        SET
+          product_id            = ${patch.productId},
+          product_name_snapshot = ${patch.productNameSnapshot ?? ""},
+          sku_snapshot          = ${patch.skuSnapshot ?? ""},
+          cost_snapshot         = ${patch.costSnapshot ?? 0},
+          quantity              = ${patch.quantity}
+        WHERE id = ${itemId} AND punch_box_id = ${punchBoxId}
+      `;
+    } else {
+      await sql`
+        UPDATE punch_box_item
+        SET
+          product_id            = ${patch.productId},
+          product_name_snapshot = ${patch.productNameSnapshot ?? ""},
+          sku_snapshot          = ${patch.skuSnapshot ?? ""},
+          cost_snapshot         = ${patch.costSnapshot ?? 0}
+        WHERE id = ${itemId} AND punch_box_id = ${punchBoxId}
+      `;
+    }
+  }
+  await sql`
+    UPDATE punch_box pb
+    SET
+      total_cogs_usd = (
+        SELECT COALESCE(SUM(pbi.cost_snapshot::numeric / 6.5 * pbi.quantity), 0)
+        FROM punch_box_item pbi
+        WHERE pbi.punch_box_id = pb.id
+      ),
+      profit_usd = pb.retail_price - (
+        SELECT COALESCE(SUM(pbi.cost_snapshot::numeric / 6.5 * pbi.quantity), 0)
+        FROM punch_box_item pbi
+        WHERE pbi.punch_box_id = pb.id
+      )
+    WHERE pb.id = ${punchBoxId}
+  `;
+  const boxes = await sql`
+    SELECT * FROM punch_box WHERE id = ${punchBoxId}
+  `;
+  const items = await sql`
+    SELECT * FROM punch_box_item
+    WHERE punch_box_id = ${punchBoxId}
+    ORDER BY display_order ASC
+  `;
+  return { punchBox: boxes[0], items };
+}
+async function markPunchBoxOrdered(id, items) {
+  await sql.begin(async (tx) => {
+    for (const item of items) {
+      if (item.product_id !== null) {
+        await tx`
+          UPDATE product
+          SET inventory_quantity = inventory_quantity - ${item.quantity}
+          WHERE id = ${item.product_id}
+        `;
+      }
+    }
+    await tx`
+      UPDATE punch_box SET status = 'ORDERED' WHERE id = ${id}
+    `;
+  });
+}
+async function loadProductsByIds(productIds) {
+  if (productIds.length === 0) return /* @__PURE__ */ new Map();
+  const rows = await sql`
+    SELECT * FROM product WHERE id = ANY(${productIds})
+  `;
+  const map3 = /* @__PURE__ */ new Map();
+  for (const row of rows) map3.set(row.id, row);
+  return map3;
+}
+
+// src/routes/admin/punchBoxes.ts
+var adminPunchBoxesRouter = (0, import_express19.Router)();
+adminPunchBoxesRouter.use(basicAuth);
+var CreatePunchBoxSchema = external_exports.object({
+  futurePartyId: external_exports.number().int().positive().optional(),
+  slotCount: external_exports.union([external_exports.literal(30), external_exports.literal(50), external_exports.literal(70)]),
+  retailPrice: external_exports.number().positive(),
+  items: external_exports.array(external_exports.object({
+    productId: external_exports.number().int().positive(),
+    quantity: external_exports.number().int().min(1),
+    displayOrder: external_exports.number().int().min(0)
+  })).min(1)
+});
+var PatchPunchBoxItemSchema = external_exports.object({
+  quantity: external_exports.number().int().min(1).optional(),
+  productId: external_exports.number().int().positive().optional()
+}).refine(
+  (data) => data.quantity !== void 0 || data.productId !== void 0,
+  { message: "At least one of quantity or productId must be provided" }
+);
+function toPunchBoxListDto(box) {
+  return {
+    publicId: box.public_id,
+    slotCount: box.slot_count,
+    totalCogsUsd: parseFloat(box.total_cogs_usd),
+    retailPrice: parseFloat(box.retail_price),
+    profitUsd: parseFloat(box.profit_usd),
+    status: box.status,
+    createdAt: box.created_at,
+    futurePartyId: box.future_party_id
+  };
+}
+function toPunchBoxItemDto(item) {
+  return {
+    itemId: item.id,
+    productId: item.product_id,
+    productNameSnapshot: item.product_name_snapshot,
+    skuSnapshot: item.sku_snapshot,
+    costSnapshotRmb: parseFloat(item.cost_snapshot),
+    quantity: item.quantity,
+    displayOrder: item.display_order
+  };
+}
+function toPunchBoxDetailDto(agg) {
+  return {
+    ...toPunchBoxListDto(agg.punchBox),
+    items: agg.items.map(toPunchBoxItemDto)
+  };
+}
+adminPunchBoxesRouter.post(
+  "/",
+  async (req, res, next) => {
+    try {
+      const body = CreatePunchBoxSchema.parse(req.body);
+      const productIds = body.items.map((i5) => i5.productId);
+      const productMap = await loadProductsByIds(productIds);
+      for (const item of body.items) {
+        const product = productMap.get(item.productId);
+        if (!product) {
+          res.status(400).json({
+            type: "about:validation-error",
+            title: "Bad Request",
+            status: 400,
+            detail: `Product not found: ${item.productId}`,
+            instance: req.path
+          });
+          return;
+        }
+        if (!product.active) {
+          res.status(400).json({
+            type: "about:validation-error",
+            title: "Bad Request",
+            status: 400,
+            detail: `Product is not active: ${item.productId}`,
+            instance: req.path
+          });
+          return;
+        }
+      }
+      if (body.futurePartyId !== void 0) {
+        const fpRows = await sql`
+          SELECT id FROM future_parties WHERE id = ${body.futurePartyId}
+        `;
+        if (fpRows.length === 0) {
+          res.status(400).json({
+            type: "about:validation-error",
+            title: "Bad Request",
+            status: 400,
+            detail: `Future party not found: ${body.futurePartyId}`,
+            instance: req.path
+          });
+          return;
+        }
+      }
+      let totalCogsUsd = 0;
+      for (const item of body.items) {
+        const product = productMap.get(item.productId);
+        totalCogsUsd += parseFloat(product.cost) / 6.5 * item.quantity;
+      }
+      totalCogsUsd = Math.round(totalCogsUsd * 100) / 100;
+      const profitUsd = Math.round((body.retailPrice - totalCogsUsd) * 100) / 100;
+      const itemSnapshots = body.items.map((item) => {
+        const product = productMap.get(item.productId);
+        return {
+          productId: item.productId,
+          productNameSnapshot: product.name,
+          skuSnapshot: product.sku,
+          costSnapshot: parseFloat(product.cost),
+          quantity: item.quantity,
+          displayOrder: item.displayOrder
+        };
+      });
+      const box = await savePunchBox({
+        futurePartyId: body.futurePartyId ?? null,
+        slotCount: body.slotCount,
+        retailPrice: body.retailPrice,
+        totalCogsUsd,
+        profitUsd,
+        items: itemSnapshots
+      });
+      const agg = await findPunchBoxByPublicId(box.public_id);
+      res.status(201).json(toPunchBoxDetailDto(agg));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminPunchBoxesRouter.get(
+  "/",
+  async (_req, res, next) => {
+    try {
+      const boxes = await listPunchBoxes();
+      res.json(boxes.map(toPunchBoxListDto));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminPunchBoxesRouter.get(
+  "/:publicId",
+  async (req, res, next) => {
+    try {
+      const { publicId } = req.params;
+      const agg = await findPunchBoxByPublicId(publicId);
+      if (!agg) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Punch box not found: ${publicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      res.json(toPunchBoxDetailDto(agg));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminPunchBoxesRouter.patch(
+  "/:publicId/items/:itemId",
+  async (req, res, next) => {
+    try {
+      const { publicId } = req.params;
+      const itemId = parseInt(req.params.itemId, 10);
+      if (isNaN(itemId)) {
+        res.status(400).json({
+          type: "about:validation-error",
+          title: "Bad Request",
+          status: 400,
+          detail: "itemId must be an integer.",
+          instance: req.path
+        });
+        return;
+      }
+      const agg = await findPunchBoxByPublicId(publicId);
+      if (!agg) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Punch box not found: ${publicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (agg.punchBox.status === "ORDERED") {
+        res.status(409).json({
+          type: "about:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "Cannot edit an ordered punch box.",
+          instance: req.path
+        });
+        return;
+      }
+      const item = agg.items.find((i5) => i5.id === itemId);
+      if (!item) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Item not found: ${itemId}`,
+          instance: req.path
+        });
+        return;
+      }
+      const patch = PatchPunchBoxItemSchema.parse(req.body);
+      let productPatch = {};
+      if (patch.productId !== void 0) {
+        const productMap = await loadProductsByIds([patch.productId]);
+        const product = productMap.get(patch.productId);
+        if (!product) {
+          res.status(400).json({
+            type: "about:validation-error",
+            title: "Bad Request",
+            status: 400,
+            detail: `Product not found: ${patch.productId}`,
+            instance: req.path
+          });
+          return;
+        }
+        if (!product.active) {
+          res.status(400).json({
+            type: "about:validation-error",
+            title: "Bad Request",
+            status: 400,
+            detail: "Product is not active.",
+            instance: req.path
+          });
+          return;
+        }
+        productPatch = {
+          productId: product.id,
+          productNameSnapshot: product.name,
+          skuSnapshot: product.sku,
+          costSnapshot: parseFloat(product.cost)
+        };
+      }
+      const updated = await patchPunchBoxItem(agg.punchBox.id, itemId, {
+        quantity: patch.quantity,
+        ...productPatch
+      });
+      res.json(toPunchBoxDetailDto(updated));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+adminPunchBoxesRouter.post(
+  "/:publicId/order",
+  async (req, res, next) => {
+    try {
+      const { publicId } = req.params;
+      const agg = await findPunchBoxByPublicId(publicId);
+      if (!agg) {
+        res.status(404).json({
+          type: "about:not-found",
+          title: "Not Found",
+          status: 404,
+          detail: `Punch box not found: ${publicId}`,
+          instance: req.path
+        });
+        return;
+      }
+      if (agg.punchBox.status === "ORDERED") {
+        res.status(409).json({
+          type: "about:conflict",
+          title: "Conflict",
+          status: 409,
+          detail: "Punch box is already ordered.",
+          instance: req.path
+        });
+        return;
+      }
+      await markPunchBoxOrdered(agg.punchBox.id, agg.items);
+      res.json({ publicId, status: "ORDERED" });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // src/app.ts
 function createApp() {
-  const app2 = (0, import_express19.default)();
+  const app2 = (0, import_express20.default)();
   app2.use((0, import_cors.default)(corsOptions));
-  app2.use("/api/webhooks/stripe", import_express19.default.raw({ type: "application/json" }), webhookRouter);
-  app2.use(import_express19.default.json());
+  app2.use("/api/webhooks/stripe", import_express20.default.raw({ type: "application/json" }), webhookRouter);
+  app2.use(import_express20.default.json());
   app2.use("/api", healthRouter);
   app2.use("/api/generated-bundles", generatedBundlesRouter);
   app2.use("/api/analytics", analyticsRouter);
@@ -135973,6 +136496,7 @@ function createApp() {
   app2.use("/admin/api/generated-bundles", adminGeneratedBundlesRouter);
   app2.use("/admin/api/offline-fairs", adminOfflineFairsRouter);
   app2.use("/admin/api/analytics", adminAnalyticsRouter);
+  app2.use("/admin/api/punch-boxes", adminPunchBoxesRouter);
   app2.use(errorHandler);
   return app2;
 }

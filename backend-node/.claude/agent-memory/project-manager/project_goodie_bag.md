@@ -38,3 +38,11 @@ type: project
 - Open: T10 (JWT middleware tests), T11 (profile endpoint tests), T12 (smoke test) — need live Supabase env.
 
 **How to apply:** When the user asks about feature status, FEAT-001 feature code is complete; tests remain to be written. Verify tasks.md for current status.
+
+**Punch Box Feature (FEAT-PB): EXECUTED 2026-09-20 — all 13 tasks complete**
+- specs at `specs/punch-box/` (requirements.md, design.md, tasks.md)
+- Migration 012 created: `backend-node/migrations/012_punch_box.ts`
+- Backend: punchBoxes repository + routes, futureParties DTO updated with linkedPunchBoxId/linkedPunchBoxPublicId, app.ts registered, PATCH /:id/link-punch-box route added
+- Frontend: PunchBoxBuilderPage, PunchBoxEditPage, punchBoxHtml.ts utility; FuturePartiesPage punch box buttons; BundlesPage merged list + Mark as Ordered; OrdersPage merged ORDERED punch boxes; App.tsx routing
+- Key deviations: none — implemented per design.md
+- Open items: no tests written (same as FEAT-001 pattern); build/lint not run (user should run before deploy)

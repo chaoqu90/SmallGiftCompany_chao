@@ -31,6 +31,7 @@ import {
   Paper,
 } from '@mui/material'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import GridViewIcon from '@mui/icons-material/GridView'
 import LinkIcon from '@mui/icons-material/Link'
 import SendIcon from '@mui/icons-material/Send'
 import ReplayIcon from '@mui/icons-material/Replay'
@@ -192,8 +193,9 @@ export function AdminFuturePartiesPage() {
                       }
                     </TableCell>
 
-                    {/* Actions column — icon buttons (AC-FP-B.3, AC-FP-B.4, AC-FP-B.5, AC5.1, AC5.8, AC6.1, AC6.2) */}
+                    {/* Actions column — icon buttons (AC-FP-B.3, AC-FP-B.4, AC-FP-B.5, AC5.1, AC5.8, AC6.1, AC6.2, AC1.1–AC1.4) */}
                     <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                      {/* Bundle actions (unchanged) */}
                       {row.linkedBundlePublicId !== null ? (
                         <>
                           {/* View Bundle (AC-FP-B.3) */}
@@ -247,6 +249,32 @@ export function AdminFuturePartiesPage() {
                             </IconButton>
                           </Tooltip>
                         </>
+                      )}
+
+                      {/* Punch box actions — independent of bundle state (AC1.1–AC1.4) */}
+                      {row.linkedPunchBoxId === null ? (
+                        <Tooltip title="Generate Punch Box">
+                          <IconButton
+                            size="small"
+                            onClick={() => navigate(`/admin/punch-box/new?futurePartyId=${row.id}`)}
+                          >
+                            <GridViewIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip title="View Punch Box">
+                          <IconButton
+                            size="small"
+                            color="secondary"
+                            onClick={() => {
+                              if (row.linkedPunchBoxPublicId) {
+                                navigate(`/admin/punch-box/${row.linkedPunchBoxPublicId}`)
+                              }
+                            }}
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
                       )}
 
                     </TableCell>

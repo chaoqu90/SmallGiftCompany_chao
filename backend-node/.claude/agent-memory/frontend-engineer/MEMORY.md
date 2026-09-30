@@ -1,0 +1,1 @@
+- [Frontend-memory cart architecture](project_cart_local_state.md) — cart is localStorage-only; DB write happens only at createPaymentIntent (checkout time)

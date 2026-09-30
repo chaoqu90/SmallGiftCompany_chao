@@ -47,6 +47,9 @@ import { adminGeneratedBundlesRouter }   from './routes/admin/generatedBundles.j
 import { adminOfflineFairsRouter } from './routes/admin/offline-fairs.js';
 import { adminAnalyticsRouter }    from './routes/admin/analytics.js';
 
+// Punch Box routers (FEAT-PB)
+import { adminPunchBoxesRouter } from './routes/admin/punchBoxes.js';
+
 export function createApp() {
   const app = express();
 
@@ -88,6 +91,9 @@ export function createApp() {
   // ── Analytics & Offline Fair routes (FEAT-006) ────────────────────────────
   app.use('/admin/api/offline-fairs', adminOfflineFairsRouter);  // basicAuth inside router
   app.use('/admin/api/analytics',     adminAnalyticsRouter);     // basicAuth inside router
+
+  // ── Punch Box routes (FEAT-PB) ────────────────────────────────────────────
+  app.use('/admin/api/punch-boxes', adminPunchBoxesRouter);       // basicAuth inside router
 
   // ── Error handler (MUST be last) ─────────────────────────────────────────
   app.use(errorHandler);

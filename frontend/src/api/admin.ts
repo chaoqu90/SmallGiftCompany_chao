@@ -177,16 +177,50 @@ export interface GiftBagAlternativeDto {
  * Design: specs/future-party/design.md §5.2
  */
 export interface AdminFutureParty {
-  id:                   number
-  email:                string
-  partyDate:            string
-  kidGender:            'BOY' | 'GIRL' | 'MIXED'
-  kidAge:               number
-  submittedAt:          string
-  linkedBundlePublicId: string | null
-  bundleSentAt:         string | null
-  redemptionCode:       string | null
-  redeemedAt:           string | null
+  id:                     number
+  email:                  string
+  partyDate:              string
+  kidGender:              'BOY' | 'GIRL' | 'MIXED'
+  kidAge:                 number
+  submittedAt:            string
+  linkedBundlePublicId:   string | null
+  bundleSentAt:           string | null
+  redemptionCode:         string | null
+  redeemedAt:             string | null
+  linkedPunchBoxId:       number | null
+  linkedPunchBoxPublicId: string | null
+}
+
+// ─── Punch Box (FEAT-PB) ──────────────────────────────────────────────────────
+
+export interface AdminPunchBoxListItem {
+  publicId:     string
+  slotCount:    30 | 50 | 70
+  totalCogsUsd: number
+  retailPrice:  number
+  profitUsd:    number
+  status:       'ASSIGNED' | 'ORDERED'
+  createdAt:    string
+  futurePartyId: number | null
+}
+
+export interface AdminPunchBoxDetail extends AdminPunchBoxListItem {
+  items: {
+    itemId:              number
+    productId:           number | null
+    productNameSnapshot: string
+    skuSnapshot:         string
+    costSnapshotRmb:     number
+    quantity:            number
+    displayOrder:        number
+  }[]
+}
+
+export interface CreatePunchBoxRequest {
+  futurePartyId?: number
+  slotCount:      30 | 50 | 70
+  retailPrice:    number
+  items: { productId: number; quantity: number; displayOrder: number }[]
 }
 
 // ─── Analytics — Offline Fair (FEAT-006) ─────────────────────────────────────
@@ -542,4 +576,42 @@ export const adminApi = {
   /** GET /admin/api/analytics/inventory */
   getInventoryInsights: (auth: string) =>
     adminRequest<InventoryInsights>('/admin/api/analytics/inventory', auth),
+
+  // ── Punch Box (FEAT-PB) ──────────────────────────────────────────────────────
+
+  /** POST /admin/api/punch-boxes — create a punch box */
+  createPunchBox: (auth: string, body: CreatePunchBoxRequest) =>
+    adminRequest<AdminPunchBoxDetail>('/admin/api/punch-boxes', auth, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  /** GET /admin/api/punch-boxes — list all punch boxes, newest first */
+  listPunchBoxes: (auth: string) =>
+    adminRequest<AdminPunchBoxListItem[]>('/admin/api/punch-boxes', auth),
+
+  /** GET /admin/api/punch-boxes/:publicId — get full punch box with items */
+  getPunchBoxDetail: (auth: string, publicId: string) =>
+    adminRequest<AdminPunchBoxDetail>(`/admin/api/punch-boxes/${publicId}`, auth),
+
+  /** PATCH /admin/api/punch-boxes/:publicId/items/:itemId — update item quantity or swap product */
+  patchPunchBoxItem: (
+    auth: string,
+    publicId: string,
+    itemId: number,
+    patch: { quantity?: number; productId?: number },
+  ) =>
+    adminRequest<AdminPunchBoxDetail>(
+      `/admin/api/punch-boxes/${publicId}/items/${itemId}`,
+      auth,
+      { method: 'PATCH', body: JSON.stringify(patch) },
+    ),
+
+  /** POST /admin/api/punch-boxes/:publicId/order — mark punch box as ORDERED + deduct inventory */
+  orderPunchBox: (auth: string, publicId: string) =>
+    adminRequest<{ publicId: string; status: string }>(
+      `/admin/api/punch-boxes/${publicId}/order`,
+      auth,
+      { method: 'POST' },
+    ),
 }

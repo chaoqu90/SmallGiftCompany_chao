@@ -24,6 +24,15 @@ export interface FuturePartyRow {
   source:                 string | null;   // FEAT-005 — 'signup-promotion' or NULL
   redemption_code:        string | null;   // 6-digit code, only for signup-promotion rows
   redeemed_at:            string | null;   // timestamptz, set when code is scanned at booth
+  linked_punch_box_id:    number | null;   // FEAT-PB — nullable FK into punch_box(id)
+}
+
+/**
+ * Extended row type for admin list — includes punch_box public_id joined from the punch_box table.
+ * Used by listFuturePartiesWithPunchBox.
+ */
+export interface FuturePartyWithPunchBoxRow extends FuturePartyRow {
+  linked_punch_box_public_id: string | null;
 }
 
 export interface InsertFuturePartyData {
@@ -105,6 +114,51 @@ export async function listFutureParties(): Promise<FuturePartyRow[]> {
     SELECT * FROM future_parties
     ORDER BY submitted_at DESC
   `;
+}
+
+// ─── listFuturePartiesWithPunchBox ────────────────────────────────────────────
+
+/**
+ * Return all future party rows with the linked punch_box.public_id joined,
+ * newest first. Used by the admin list endpoint.
+ * Design: specs/punch-box/design.md §11.1
+ */
+export async function listFuturePartiesWithPunchBox(): Promise<FuturePartyWithPunchBoxRow[]> {
+  return sql<FuturePartyWithPunchBoxRow[]>`
+    SELECT fp.*,
+           pb.public_id AS linked_punch_box_public_id
+    FROM future_parties fp
+    LEFT JOIN punch_box pb ON pb.id = fp.linked_punch_box_id
+    ORDER BY fp.submitted_at DESC
+  `;
+}
+
+// ─── linkPunchBox ─────────────────────────────────────────────────────────────
+
+/**
+ * Set linked_punch_box_id on a future party row.
+ * Returns the updated row with punch box public_id, or undefined if not found.
+ * Requirements: FEAT-PB AC4.4
+ */
+export async function linkPunchBox(
+  id: number,
+  punchBoxId: number,
+): Promise<FuturePartyWithPunchBoxRow | undefined> {
+  const rows = await sql<FuturePartyRow[]>`
+    UPDATE future_parties
+    SET linked_punch_box_id = ${punchBoxId}
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  if (rows.length === 0) return undefined;
+  // Re-fetch with JOIN to get punch_box public_id
+  const withPb = await sql<FuturePartyWithPunchBoxRow[]>`
+    SELECT fp.*, pb.public_id AS linked_punch_box_public_id
+    FROM future_parties fp
+    LEFT JOIN punch_box pb ON pb.id = fp.linked_punch_box_id
+    WHERE fp.id = ${id}
+  `;
+  return withPb[0];
 }
 
 // ─── findFuturePartyById ──────────────────────────────────────────────────────

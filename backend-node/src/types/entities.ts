@@ -278,6 +278,31 @@ export interface OfflineFairSaleRow {
   created_at: Date;
 }
 
+// ─── punch_box ────────────────────────────────────────────────────────────────
+
+export interface PunchBoxRow {
+  id:             number;
+  public_id:      string;
+  future_party_id: number | null;
+  slot_count:     number;
+  total_cogs_usd: string;   // NUMERIC(10,2) — postgres.js returns as string
+  retail_price:   string;   // NUMERIC(10,2) — postgres.js returns as string
+  profit_usd:     string;   // NUMERIC(10,2) — postgres.js returns as string
+  status:         string;
+  created_at:     Date;
+}
+
+export interface PunchBoxItemRow {
+  id:                    number;
+  punch_box_id:          number;
+  product_id:            number | null;
+  product_name_snapshot: string;
+  sku_snapshot:          string;
+  cost_snapshot:         string;  // NUMERIC(10,2) — postgres.js returns as string
+  quantity:              number;
+  display_order:         number;
+}
+
 // ─── Affinity maps (in-memory index built from batch-loaded rows) ────────────
 
 /**

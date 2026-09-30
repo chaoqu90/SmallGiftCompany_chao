@@ -10,18 +10,44 @@
  * Design: specs/future-party/design.md §3.5
  */
 import { Router, type Request, type Response, type NextFunction } from 'express';
+import { z } from 'zod';
 import { basicAuth } from '../../middleware/auth.js';
 import { LinkBundleRequestSchema } from '../../types/dtos.js';
 import {
-  listFutureParties,
+  listFuturePartiesWithPunchBox,
   findFuturePartyById,
   findByRedemptionCode,
   markRedeemed,
   linkBundle,
+  linkPunchBox,
   recordSend,
+  type FuturePartyWithPunchBoxRow,
+  type FuturePartyRow,
 } from '../../repositories/futureParties.js';
-import { toFuturePartyDto } from '../futureParties.js';
 import { FUTURE_PARTY_EMAIL_SUBJECT, buildFuturePartyText, sendFuturePartyEmail } from '../../lib/email.js';
+
+const LinkPunchBoxRequestSchema = z.object({
+  punchBoxId: z.number().int().positive(),
+});
+
+function toFuturePartyDtoAdmin(row: FuturePartyWithPunchBoxRow | FuturePartyRow) {
+  const withPb = row as FuturePartyWithPunchBoxRow;
+  return {
+    id:                     row.id,
+    email:                  row.email,
+    partyDate:              row.party_date,
+    kidGender:              row.kid_gender,
+    kidAge:                 row.kid_age,
+    submittedAt:            row.submitted_at,
+    linkedBundlePublicId:   row.linked_bundle_public_id,
+    bundleSentAt:           row.bundle_sent_at,
+    source:                 row.source,
+    redemptionCode:         row.redemption_code,
+    redeemedAt:             row.redeemed_at,
+    linkedPunchBoxId:       row.linked_punch_box_id ?? null,
+    linkedPunchBoxPublicId: withPb.linked_punch_box_public_id ?? null,
+  };
+}
 
 export const adminFuturePartiesRouter = Router();
 
@@ -38,8 +64,8 @@ adminFuturePartiesRouter.get(
   '/',
   async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const rows = await listFutureParties();
-      res.json(rows.map(toFuturePartyDto));
+      const rows = await listFuturePartiesWithPunchBox();
+      res.json(rows.map(toFuturePartyDtoAdmin));
     } catch (err) {
       next(err);
     }
@@ -110,7 +136,7 @@ adminFuturePartiesRouter.post(
         });
         return;
       }
-      res.json(toFuturePartyDto(updated));
+      res.json(toFuturePartyDtoAdmin(updated));
     } catch (err) {
       next(err);
     }
@@ -167,7 +193,7 @@ adminFuturePartiesRouter.patch(
       const { bundlePublicId } = LinkBundleRequestSchema.parse(req.body);
       const updated = await linkBundle(id, bundlePublicId);
 
-      res.json(toFuturePartyDto(updated!));
+      res.json(toFuturePartyDtoAdmin(updated!));
     } catch (err) {
       next(err);
     }
@@ -313,6 +339,62 @@ adminFuturePartiesRouter.post(
       const updated = await recordSend(id);
 
       res.json({ sentAt: updated!.bundle_sent_at });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ─── PATCH /:id/link-punch-box ────────────────────────────────────────────────
+
+/**
+ * Link a punch box to a future party submission.
+ * Body: { punchBoxId: number }
+ * Returns the updated future party DTO with linkedPunchBoxId and linkedPunchBoxPublicId set.
+ * Requirements: FEAT-PB AC4.4, design §11
+ */
+adminFuturePartiesRouter.patch(
+  '/:id/link-punch-box',
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        res.status(400).json({
+          type:     'about:validation-error',
+          title:    'Validation Error',
+          status:   400,
+          detail:   'id must be an integer.',
+          instance: req.path,
+        });
+        return;
+      }
+
+      const existing = await findFuturePartyById(id);
+      if (!existing) {
+        res.status(404).json({
+          type:     'about:not-found',
+          title:    'Not Found',
+          status:   404,
+          detail:   `Future party submission not found: ${id}`,
+          instance: req.path,
+        });
+        return;
+      }
+
+      const { punchBoxId } = LinkPunchBoxRequestSchema.parse(req.body);
+      const updated = await linkPunchBox(id, punchBoxId);
+      if (!updated) {
+        res.status(404).json({
+          type:     'about:not-found',
+          title:    'Not Found',
+          status:   404,
+          detail:   `Future party submission not found: ${id}`,
+          instance: req.path,
+        });
+        return;
+      }
+
+      res.json(toFuturePartyDtoAdmin(updated));
     } catch (err) {
       next(err);
     }
