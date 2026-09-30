@@ -270,14 +270,14 @@ export function AdminPunchBoxBuilderPage() {
     setSubmitting(true)
     try {
       const items = Array.from(selectedItems.values()).map(({ product, quantity }, idx) => ({
-        productId:    product.id,
-        quantity,
+        productId:    Number(product.id),
+        quantity:     Number(quantity),
         displayOrder: idx,
       }))
       await adminApi.createPunchBox(authHeader!, {
-        futurePartyId,
-        slotCount,
-        retailPrice: rp,
+        futurePartyId: futurePartyId ? Number(futurePartyId) : undefined,
+        slotCount:     Number(slotCount) as SlotSize,
+        retailPrice:   rp,
         items,
       })
       setSnackbar('Punch box created successfully!')
