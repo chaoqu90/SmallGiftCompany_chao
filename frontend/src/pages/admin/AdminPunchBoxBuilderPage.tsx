@@ -85,6 +85,8 @@ export function AdminPunchBoxBuilderPage() {
 
   // Selection: productId → { product, quantity }
   const [selectedItems, setSelectedItems] = useState<Map<number, { product: AdminProduct; quantity: number }>>(new Map())
+  // Draft quantity strings while user is typing — keyed by productId
+  const [draftQty, setDraftQty] = useState<Map<number, string>>(new Map())
 
   // Configuration
   const [slotCount, setSlotCount] = useState<SlotSize | null>(null)
@@ -209,8 +211,10 @@ export function AdminPunchBoxBuilderPage() {
       const next = new Map(prev)
       if (next.has(product.id)) {
         next.delete(product.id)
+        setDraftQty(d => { const nd = new Map(d); nd.delete(product.id); return nd })
       } else {
         next.set(product.id, { product, quantity: 1 })
+        setDraftQty(d => { const nd = new Map(d); nd.set(product.id, '1'); return nd })
       }
       return next
     })
@@ -469,6 +473,7 @@ export function AdminPunchBoxBuilderPage() {
                   <Stack spacing={1}>
                     {selectedList.map(({ product, quantity }) => {
                       const atMax = quantity >= product.inventoryQuantity
+                      const draft = draftQty.get(product.id) ?? String(quantity)
                       return (
                         <Box key={product.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -480,8 +485,17 @@ export function AdminPunchBoxBuilderPage() {
                           <TextField
                             size="small"
                             type="number"
-                            value={quantity}
-                            onChange={e => setQuantity(product.id, parseInt(e.target.value) || 1)}
+                            value={draft}
+                            onChange={e => {
+                              const raw = e.target.value
+                              setDraftQty(d => { const nd = new Map(d); nd.set(product.id, raw); return nd })
+                            }}
+                            onBlur={() => {
+                              const parsed = parseInt(draft, 10)
+                              const clamped = isNaN(parsed) ? 1 : Math.min(product.inventoryQuantity, Math.max(1, parsed))
+                              setQuantity(product.id, clamped)
+                              setDraftQty(d => { const nd = new Map(d); nd.set(product.id, String(clamped)); return nd })
+                            }}
                             slotProps={{ htmlInput: { min: 1, max: product.inventoryQuantity, style: { width: 52 } } }}
                             sx={{ width: 72, flexShrink: 0 }}
                             error={atMax}
