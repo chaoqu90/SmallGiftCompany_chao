@@ -37,6 +37,8 @@ import {
   Typography,
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
+import PercentIcon from '@mui/icons-material/Percent'
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
 import { adminApi, type AdminProduct } from '../../api/admin'
@@ -88,6 +90,7 @@ export function AdminPunchBoxBuilderPage() {
   const [slotCount, setSlotCount] = useState<SlotSize | null>(null)
   const [retailPrice, setRetailPrice] = useState<string>('')
   const [profit, setProfit] = useState<string>('')
+  const [profitMode, setProfitMode] = useState<'$' | '%'>('$')
   const [priceCalculated, setPriceCalculated] = useState(false)
 
   // Submission
@@ -138,11 +141,25 @@ export function AdminPunchBoxBuilderPage() {
     return Math.round(total * 100) / 100
   }, [selectedItems])
 
+  // Total slots used by selected items
+  const totalSlotsUsed = useMemo(() => {
+    let total = 0
+    for (const { quantity } of selectedItems.values()) total += quantity
+    return total
+  }, [selectedItems])
+
+  const slotsOverLimit = slotCount !== null && totalSlotsUsed > slotCount
+
   function handleCalculatePrice() {
     const retail = suggestedRetailPrice
-    const prof = Math.round((retail - totalCogsUsd) * 100) / 100
+    const profitUsd = Math.round((retail - totalCogsUsd) * 100) / 100
     setRetailPrice(retail.toFixed(2))
-    setProfit(prof.toFixed(2))
+    if (profitMode === '$') {
+      setProfit(profitUsd.toFixed(2))
+    } else {
+      const pct = totalCogsUsd > 0 ? (profitUsd / totalCogsUsd) * 100 : 0
+      setProfit(Math.round(pct * 10) / 10 + '')
+    }
     setPriceCalculated(true)
   }
 
@@ -150,7 +167,13 @@ export function AdminPunchBoxBuilderPage() {
     setRetailPrice(val)
     const r = parseFloat(val)
     if (!isNaN(r)) {
-      setProfit((Math.round((r - totalCogsUsd) * 100) / 100).toFixed(2))
+      const profitUsd = Math.round((r - totalCogsUsd) * 100) / 100
+      if (profitMode === '$') {
+        setProfit(profitUsd.toFixed(2))
+      } else {
+        const pct = totalCogsUsd > 0 ? (profitUsd / totalCogsUsd) * 100 : 0
+        setProfit(Math.round(pct * 10) / 10 + '')
+      }
     }
   }
 
@@ -158,8 +181,27 @@ export function AdminPunchBoxBuilderPage() {
     setProfit(val)
     const p = parseFloat(val)
     if (!isNaN(p)) {
-      setRetailPrice((Math.round((totalCogsUsd + p) * 100) / 100).toFixed(2))
+      const profitUsd = profitMode === '%' ? totalCogsUsd * (p / 100) : p
+      setRetailPrice((Math.round((totalCogsUsd + profitUsd) * 100) / 100).toFixed(2))
     }
+  }
+
+  function toggleProfitMode() {
+    // Convert current value between $ and %
+    const current = parseFloat(profit)
+    setProfitMode(prev => {
+      if (prev === '$') {
+        // switching to %: convert dollar profit to percentage
+        const pct = !isNaN(current) && totalCogsUsd > 0 ? (current / totalCogsUsd) * 100 : 0
+        setProfit(Math.round(pct * 10) / 10 + '')
+        return '%'
+      } else {
+        // switching to $: convert percentage to dollar profit
+        const profitUsd = !isNaN(current) ? totalCogsUsd * (current / 100) : 0
+        setProfit((Math.round(profitUsd * 100) / 100).toFixed(2))
+        return '$'
+      }
+    })
   }
 
   function toggleProduct(product: AdminProduct) {
@@ -180,7 +222,8 @@ export function AdminPunchBoxBuilderPage() {
       const next = new Map(prev)
       const entry = next.get(productId)
       if (entry) {
-        next.set(productId, { ...entry, quantity: Math.max(1, quantity) })
+        const maxQty = entry.product.inventoryQuantity
+        next.set(productId, { ...entry, quantity: Math.min(maxQty, Math.max(1, quantity)) })
       }
       return next
     })
@@ -205,13 +248,17 @@ export function AdminPunchBoxBuilderPage() {
   async function handleGenerate() {
     setSubmitError(null)
 
-    // Validation (AC3.6)
+    // Validation
     if (selectedItems.size === 0) {
       setSubmitError('Please select at least one product.')
       return
     }
     if (!slotCount) {
       setSubmitError('Please select a punch box size.')
+      return
+    }
+    if (slotsOverLimit) {
+      setSubmitError(`Total item quantity (${totalSlotsUsed}) exceeds the selected size of ${slotCount} slots.`)
       return
     }
     const rp = parseFloat(retailPrice)
@@ -259,23 +306,26 @@ export function AdminPunchBoxBuilderPage() {
             <Paper variant="outlined" sx={{ p: 2 }}>
               <Typography variant="subtitle1" fontWeight={700} mb={2}>Products</Typography>
 
-              <Stack direction="row" spacing={1} mb={2} flexWrap="wrap">
-                <TextField
-                  size="small"
-                  placeholder="Search by name or SKU…"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  sx={{ minWidth: 220 }}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                />
+              {/* Row 1: search */}
+              <TextField
+                size="small"
+                fullWidth
+                placeholder="Search by name or SKU…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                sx={{ mb: 1 }}
+                slotProps={{
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon fontSize="small" />
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              {/* Row 2: category filter chips */}
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, mb: 2 }}>
                 <Chip
                   label="All"
                   variant={!categoryFilter ? 'filled' : 'outlined'}
@@ -293,7 +343,7 @@ export function AdminPunchBoxBuilderPage() {
                     sx={{ cursor: 'pointer' }}
                   />
                 ))}
-              </Stack>
+              </Box>
 
               {productsLoading && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -369,7 +419,7 @@ export function AdminPunchBoxBuilderPage() {
               <Typography variant="subtitle1" fontWeight={700} mb={2}>Configuration</Typography>
 
               {/* Punch Box Size */}
-              <FormControl size="small" fullWidth sx={{ mb: 2 }}>
+              <FormControl size="small" fullWidth sx={{ mb: 1 }}>
                 <InputLabel>Punch Box Size</InputLabel>
                 <Select
                   value={slotCount ?? ''}
@@ -381,6 +431,29 @@ export function AdminPunchBoxBuilderPage() {
                   ))}
                 </Select>
               </FormControl>
+
+              {/* Slots indicator */}
+              {slotCount !== null && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography
+                    variant="body2"
+                    fontWeight={600}
+                    color={slotsOverLimit ? 'error' : totalSlotsUsed === slotCount ? 'success.main' : 'text.secondary'}
+                  >
+                    {totalSlotsUsed} / {slotCount} slots filled
+                    {slotsOverLimit && ' — exceeds limit!'}
+                  </Typography>
+                  <Box sx={{ height: 4, borderRadius: 2, bgcolor: '#E0E0E0', mt: 0.5, overflow: 'hidden' }}>
+                    <Box sx={{
+                      height: '100%',
+                      borderRadius: 2,
+                      width: `${Math.min(100, (totalSlotsUsed / slotCount) * 100)}%`,
+                      bgcolor: slotsOverLimit ? 'error.main' : totalSlotsUsed === slotCount ? 'success.main' : 'primary.main',
+                      transition: 'width 200ms ease, background-color 200ms ease',
+                    }} />
+                  </Box>
+                </Box>
+              )}
 
               {/* Selected products */}
               <Typography variant="body2" fontWeight={600} mb={1} color="text.secondary">
@@ -394,19 +467,28 @@ export function AdminPunchBoxBuilderPage() {
               ) : (
                 <Box sx={{ maxHeight: 220, overflowY: 'auto', mb: 2 }}>
                   <Stack spacing={1}>
-                    {selectedList.map(({ product, quantity }) => (
-                      <Box key={product.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2" sx={{ flex: 1 }}>{product.name}</Typography>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={quantity}
-                          onChange={e => setQuantity(product.id, parseInt(e.target.value) || 1)}
-                          slotProps={{ htmlInput: { min: 1, style: { width: 52 } } }}
-                          sx={{ width: 72 }}
-                        />
-                      </Box>
-                    ))}
+                    {selectedList.map(({ product, quantity }) => {
+                      const atMax = quantity >= product.inventoryQuantity
+                      return (
+                        <Box key={product.id} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" noWrap>{product.name}</Typography>
+                            <Typography variant="caption" color={atMax ? 'warning.main' : 'text.disabled'}>
+                              max {product.inventoryQuantity} in stock
+                            </Typography>
+                          </Box>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={quantity}
+                            onChange={e => setQuantity(product.id, parseInt(e.target.value) || 1)}
+                            slotProps={{ htmlInput: { min: 1, max: product.inventoryQuantity, style: { width: 52 } } }}
+                            sx={{ width: 72, flexShrink: 0 }}
+                            error={atMax}
+                          />
+                        </Box>
+                      )
+                    })}
                   </Stack>
                 </Box>
               )}
@@ -431,13 +513,37 @@ export function AdminPunchBoxBuilderPage() {
                   <Typography variant="body2" fontWeight={600}>{fmt.format(totalCogsUsd)}</Typography>
                 </Box>
                 <TextField
-                  label="Profit ($)"
+                  label={`Profit (${profitMode})`}
                   size="small"
                   fullWidth
                   value={profit}
                   onChange={e => handleProfitChange(e.target.value)}
                   disabled={!priceCalculated}
                   sx={{ mb: 1 }}
+                  slotProps={{
+                    input: {
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Box
+                            onClick={priceCalculated ? toggleProfitMode : undefined}
+                            sx={{
+                              cursor: priceCalculated ? 'pointer' : 'default',
+                              display: 'flex',
+                              alignItems: 'center',
+                              color: priceCalculated ? 'primary.main' : 'text.disabled',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              gap: 0.25,
+                              userSelect: 'none',
+                            }}
+                            title="Toggle $ / % mode"
+                          >
+                            {profitMode === '$' ? <AttachMoneyIcon fontSize="small" /> : <PercentIcon fontSize="small" />}
+                          </Box>
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
                 />
                 <TextField
                   label="Retail Price ($)"
