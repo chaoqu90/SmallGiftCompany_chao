@@ -51,17 +51,18 @@ export interface ProductMeta {
 }
 
 export interface CreateProductRequest {
-  sku:          string
-  name:         string
-  description:  string
-  cost:         number
-  cogOverhead:  number
-  category:     string
-  upgradeTier:  string
-  formFactor:   string
-  minAge:       number
-  maxAge:       number
-  imageUrl?:    string | null
+  sku:               string
+  name:              string
+  description:       string
+  cost:              number
+  cogOverhead:       number
+  inventoryQuantity: number
+  category:          string
+  upgradeTier:       string
+  formFactor:        string
+  minAge:            number
+  maxAge:            number
+  imageUrl?:         string | null
 }
 
 export interface AdminBundleListItem {

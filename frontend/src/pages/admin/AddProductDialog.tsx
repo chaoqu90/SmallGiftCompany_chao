@@ -45,8 +45,9 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
   const [category,    setCategory]    = useState('')
   const [upgradeTier, setUpgradeTier] = useState('')
   const [formFactor,  setFormFactor]  = useState('')
-  const [minAge,      setMinAge]      = useState('3')
-  const [maxAge,      setMaxAge]      = useState('12')
+  const [minAge,           setMinAge]           = useState('3')
+  const [maxAge,           setMaxAge]           = useState('12')
+  const [inventoryQuantity, setInventoryQuantity] = useState('0')
 
   // Image upload state
   const [_imageFile,     setImageFile]      = useState<File | null>(null)
@@ -75,6 +76,7 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
       setFormFactor('')
       setMinAge('3')
       setMaxAge('12')
+      setInventoryQuantity('0')
       setError(null)
       setImageFile(null)
       setImagePreview(null)
@@ -141,6 +143,7 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
       description: description || '',
       cost: costNum,
       cogOverhead: overheadNum,
+      inventoryQuantity: parseInt(inventoryQuantity) || 0,
       category,
       upgradeTier,
       formFactor,
@@ -152,8 +155,8 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
       const created = await adminApi.createProduct(authHeader, data)
       onCreated(created)
       onClose()
-    } catch {
-      setError('Failed to create product — SKU may already exist')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create product — SKU may already exist')
     } finally {
       setSaving(false)
     }
@@ -282,6 +285,17 @@ export function AddProductDialog({ open, onClose, onCreated }: Props) {
           <Typography sx={{ fontSize: '0.8rem', color: '#F47F6B' }}>
             Computed retail price: <strong>${previewRetail.toFixed(2)}</strong>
           </Typography>
+          <Box>
+            <Typography sx={labelStyle}>Initial Inventory</Typography>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={inventoryQuantity}
+              onChange={e => setInventoryQuantity(e.target.value)}
+              style={{ ...inputStyle, maxWidth: 120 }}
+            />
+          </Box>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Box sx={{ flex: 1 }}>
               <Typography sx={labelStyle}>Category *</Typography>
