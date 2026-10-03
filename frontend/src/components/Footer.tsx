@@ -49,8 +49,8 @@ export function Footer() {
             </Typography>
             <Typography sx={{ fontSize: '0.8rem', color: '#6E6E73' }}>
               ✉️{' '}
-              <Link href="mailto:hello@smallgift.shop" underline="hover" sx={{ color: '#6E6E73' }}>
-                hello@smallgift.shop
+              <Link href="mailto:smallgiftshopgo@gmail.com" underline="hover" sx={{ color: '#6E6E73' }}>
+                smallgiftshopgo@gmail.com
               </Link>
             </Typography>
           </Box>
