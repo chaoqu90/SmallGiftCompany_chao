@@ -10,6 +10,9 @@ import eventPhoto1 from '../assets/events/Image_20261003141747_1139_20.jpg'
 import eventPhoto2 from '../assets/events/Image_20261003141829_1140_20.jpg'
 import eventPhoto3 from '../assets/events/Image_20261003142037_1141_20.jpg'
 import eventPhoto4 from '../assets/events/Image_20261003142103_1143_20.jpg'
+import eventPhoto5 from '../assets/events/Image_20261012152729_13_5.png'
+import eventPhoto6 from '../assets/events/Image_20261012153555_16_5.png'
+import eventPhoto7 from '../assets/events/Image_20261012154402_20_5.jpg'
 
 // ─── Event Gallery ────────────────────────────────────────────────────────────
 // To add/remove photos: import the file above and add/remove an entry here.
@@ -18,6 +21,9 @@ const EVENT_SLIDES: { src: string; caption?: string }[] = [
   { src: eventPhoto2 },
   { src: eventPhoto3 },
   { src: eventPhoto4 },
+  { src: eventPhoto5 },
+  { src: eventPhoto6 },
+  { src: eventPhoto7 },
 ]
 
 const SLIDE_INTERVAL_MS = 7000
