@@ -17,8 +17,19 @@ export interface PunchBoxHtmlData {
     productName: string
     quantity:    number
     imageUrl?:   string | null
+    rarity?:     'legendary' | 'epic' | 'rare' | 'uncommon' | 'common'
   }[]
 }
+
+// Colors drawn from the wrapping paper palette (gold + dusty blue + taupe family)
+const RARITY_META: Record<string, { label: string; bg: string; border: string }> = {
+  legendary: { label: 'Legendary', bg: '#FAF4E0', border: '#B89640' },  // deep antique gold
+  epic:      { label: 'Epic',      bg: '#EBF1F1', border: '#8BA8A8' },  // dusty slate blue
+  rare:      { label: 'Rare',      bg: '#FAF2D8', border: '#C8A850' },  // champagne gold
+  uncommon:  { label: 'Uncommon',  bg: '#EEF4F4', border: '#9EBABA' },  // soft blue-gray
+  common:    { label: 'Common',    bg: '#F4F0E8', border: '#B0A890' },  // warm taupe
+}
+const RARITY_ORDER = ['legendary', 'epic', 'rare', 'uncommon', 'common']
 
 const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
@@ -55,6 +66,55 @@ export function generatePunchBoxHtml(data: PunchBoxHtmlData): string {
       </div>
       <div style="font-size:0.75rem;color:#888;margin-top:4px;">qty: ${item.quantity}</div>
     </div>`).join('')
+
+  // ── Rarity tier poster ───────────────────────────────────────────────────────
+  const itemsWithRarity = data.items.filter(i => i.rarity)
+  const tierPosterSection = itemsWithRarity.length > 0 ? (() => {
+    const tierRows = RARITY_ORDER.map(tierKey => {
+      const meta = RARITY_META[tierKey]
+      const tierItems = data.items.filter(i => i.rarity === tierKey)
+      if (tierItems.length === 0) return ''
+
+      const itemCards = tierItems.map(item => {
+        return item.imageUrl
+          ? `<img src="${escapeHtml(item.imageUrl)}"
+                 alt="${escapeHtml(item.productName)}"
+                 style="width:108px;height:108px;object-fit:cover;border-radius:50%;
+                        border:4px solid ${meta.border};display:inline-block;
+                        vertical-align:middle;margin:4px;" />`
+          : `<div style="width:108px;height:108px;border-radius:50%;border:4px solid ${meta.border};
+                         background:#F5F5F5;display:inline-flex;align-items:center;
+                         justify-content:center;vertical-align:middle;margin:4px;
+                         font-size:2.4rem;">🎁</div>`
+      }).join('')
+
+      return `
+        <div style="display:flex;align-items:stretch;margin-bottom:6px;
+                    border-radius:6px;overflow:hidden;border:1px solid ${meta.border}33;">
+          <div style="width:80px;flex-shrink:0;background:${meta.border};
+                      display:flex;align-items:center;justify-content:center;padding:8px;">
+            <span style="color:#fff;font-weight:800;font-size:0.78rem;
+                         text-align:center;line-height:1.25;letter-spacing:0.01em;">
+              ${escapeHtml(meta.label)}
+            </span>
+          </div>
+          <div style="flex:1;background:${meta.bg};padding:8px 10px;line-height:0;">
+            ${itemCards}
+          </div>
+        </div>`
+    }).join('')
+
+    return `
+  <div style="page-break-before:always;padding-top:32px;">
+    <h2 style="font-size:1.1rem;font-weight:700;margin-bottom:4px;color:#1D1D1F;">
+      Rarity Tiers
+    </h2>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:16px;">
+      Item rarity ranking for your punch box.
+    </p>
+    ${tierRows}
+  </div>`
+  })() : ''
 
   const appendixSection = appendixItems.length > 0 ? `
   <div style="page-break-before:always;padding-top:32px;">
@@ -139,6 +199,7 @@ export function generatePunchBoxHtml(data: PunchBoxHtmlData): string {
   </footer>
 
   ${appendixSection}
+  ${tierPosterSection}
 </body>
 </html>`
 }

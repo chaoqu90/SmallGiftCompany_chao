@@ -36,10 +36,12 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import SearchIcon from '@mui/icons-material/Search'
 import { useAdminAuth } from '../../contexts/AdminAuthContext'
 import { AdminNav } from './AdminNav'
@@ -47,6 +49,26 @@ import { adminApi, type AdminProduct, type AdminPunchBoxDetail } from '../../api
 import { downloadPunchBoxHtml } from '../../utils/punchBoxHtml'
 
 const fmt = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+// ─── Rarity tiers ─────────────────────────────────────────────────────────────
+
+type RarityTier = 'legendary' | 'epic' | 'rare' | 'uncommon' | 'common'
+
+const RARITY_TIERS: { key: RarityTier; label: string; bg: string }[] = [
+  { key: 'legendary', label: 'Legendary', bg: '#B89640' },
+  { key: 'epic',      label: 'Epic',      bg: '#8BA8A8' },
+  { key: 'rare',      label: 'Rare',      bg: '#C8A850' },
+  { key: 'uncommon',  label: 'Uncommon',  bg: '#9EBABA' },
+  { key: 'common',    label: 'Common',    bg: '#B0A890' },
+]
+
+const RARITY_COLOR: Record<RarityTier, string> = {
+  legendary: '#B89640',
+  epic:      '#8BA8A8',
+  rare:      '#C8A850',
+  uncommon:  '#9EBABA',
+  common:    '#B0A890',
+}
 
 export function AdminPunchBoxEditPage() {
   const { authHeader } = useAdminAuth()
@@ -69,6 +91,11 @@ export function AdminPunchBoxEditPage() {
   const [pendingQuantities, setPendingQuantities] = useState<Map<number, number>>(new Map())
   const [savingItemId, setSavingItemId] = useState<number | null>(null)
   const [itemError, setItemError] = useState<string | null>(null)
+
+  // Rarity tier assignments: itemId → tier (client-only, used for preview)
+  const [itemRarities, setItemRarities] = useState<Record<number, RarityTier>>({})
+  const [dragItemId, setDragItemId] = useState<number | null>(null)
+  const [dragOverTier, setDragOverTier] = useState<RarityTier | null>(null)
 
   // Mark as Ordered dialog
   const [orderDialogOpen, setOrderDialogOpen] = useState(false)
@@ -121,6 +148,18 @@ export function AdminPunchBoxEditPage() {
     )
   }, [allProducts, search])
 
+  function assignRarity(itemId: number, tier: RarityTier) {
+    setItemRarities(prev => ({ ...prev, [itemId]: tier }))
+  }
+
+  function removeRarity(itemId: number) {
+    setItemRarities(prev => {
+      const next = { ...prev }
+      delete next[itemId]
+      return next
+    })
+  }
+
   async function handleQuantitySave(itemId: number) {
     const newQty = pendingQuantities.get(itemId)
     if (newQty === undefined || !authHeader || !publicId) return
@@ -167,6 +206,7 @@ export function AdminPunchBoxEditPage() {
         productName: i.productNameSnapshot,
         quantity:    i.quantity,
         imageUrl:    i.imageUrl,
+        rarity:      itemRarities[i.itemId],
       })),
     })
   }
@@ -324,21 +364,53 @@ export function AdminPunchBoxEditPage() {
                 <Chip label={`${punchBox.slotCount} slots`} size="small" variant="outlined" />
               </Box>
 
-              {/* Items list */}
+              {/* Items list — draggable into rarity tiers */}
               <Typography variant="body2" fontWeight={600} mb={1} color="text.secondary">
                 Items ({punchBox.items.length})
               </Typography>
               {itemError && <Alert severity="error" sx={{ mb: 1 }}>{itemError}</Alert>}
 
-              <Box sx={{ maxHeight: 240, overflowY: 'auto', mb: 2 }}>
-                <Stack spacing={1}>
+              <Box sx={{ maxHeight: 200, overflowY: 'auto', mb: 2 }}>
+                <Stack spacing={0.5}>
                   {punchBox.items.map(item => {
                     const pendingQty = pendingQuantities.get(item.itemId)
                     const displayQty = pendingQty !== undefined ? pendingQty : item.quantity
                     const isSaving = savingItemId === item.itemId
+                    const rarity = itemRarities[item.itemId]
                     return (
-                      <Box key={item.itemId} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="body2" sx={{ flex: 1 }}>
+                      <Box
+                        key={item.itemId}
+                        draggable
+                        onDragStart={() => setDragItemId(item.itemId)}
+                        onDragEnd={() => { setDragItemId(null); setDragOverTier(null) }}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1,
+                          px: 0.5,
+                          py: 0.25,
+                          borderRadius: 1,
+                          cursor: 'grab',
+                          bgcolor: dragItemId === item.itemId ? 'action.selected' : 'transparent',
+                          '&:hover': { bgcolor: 'action.hover' },
+                          userSelect: 'none',
+                        }}
+                      >
+                        <DragIndicatorIcon sx={{ fontSize: 16, color: 'text.disabled', flexShrink: 0 }} />
+                        {/* Rarity dot */}
+                        <Tooltip title={rarity ? `${rarity.charAt(0).toUpperCase() + rarity.slice(1)} — drag to change` : 'Drag to assign rarity'} placement="left">
+                          <Box
+                            sx={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: '50%',
+                              flexShrink: 0,
+                              bgcolor: rarity ? RARITY_COLOR[rarity] : '#E0E0E0',
+                              border: '1px solid rgba(0,0,0,0.12)',
+                            }}
+                          />
+                        </Tooltip>
+                        <Typography variant="body2" sx={{ flex: 1, fontSize: '0.8rem' }}>
                           {item.productNameSnapshot}
                         </Typography>
                         {isAssigned ? (
@@ -365,6 +437,96 @@ export function AdminPunchBoxEditPage() {
                   })}
                 </Stack>
               </Box>
+
+              {/* Rarity tiers — drag items from the list above into tiers */}
+              <Divider sx={{ mb: 1.5 }} />
+              <Typography variant="body2" fontWeight={600} mb={1} color="text.secondary">
+                Rarity Tiers
+              </Typography>
+              <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1 }}>
+                Drag items above into a tier. Shown on the preview poster.
+              </Typography>
+
+              <Stack spacing={0.5} sx={{ mb: 2 }}>
+                {RARITY_TIERS.map(tier => {
+                  const tierItems = punchBox.items.filter(i => itemRarities[i.itemId] === tier.key)
+                  const isOver = dragOverTier === tier.key && dragItemId !== null
+                  return (
+                    <Box
+                      key={tier.key}
+                      onDragOver={e => { e.preventDefault(); setDragOverTier(tier.key) }}
+                      onDragLeave={() => setDragOverTier(null)}
+                      onDrop={() => {
+                        if (dragItemId !== null) assignRarity(dragItemId, tier.key)
+                        setDragOverTier(null)
+                      }}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'stretch',
+                        minHeight: 36,
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        border: '1px solid',
+                        borderColor: isOver ? tier.bg : 'divider',
+                        transition: 'border-color 0.15s, box-shadow 0.15s',
+                        boxShadow: isOver ? `0 0 0 2px ${tier.bg}44` : 'none',
+                      }}
+                    >
+                      {/* Tier label */}
+                      <Box
+                        sx={{
+                          width: 76,
+                          flexShrink: 0,
+                          bgcolor: tier.bg,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          px: 0.5,
+                        }}
+                      >
+                        <Typography variant="caption" fontWeight={700} sx={{ color: '#fff', textAlign: 'center', lineHeight: 1.2 }}>
+                          {tier.label}
+                        </Typography>
+                      </Box>
+                      {/* Drop zone */}
+                      <Box
+                        sx={{
+                          flex: 1,
+                          px: 0.75,
+                          py: 0.5,
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: 0.5,
+                          alignContent: 'center',
+                          bgcolor: isOver ? `${tier.bg}11` : '#FAFAFA',
+                          transition: 'background-color 0.15s',
+                        }}
+                      >
+                        {tierItems.length === 0 ? (
+                          <Typography variant="caption" sx={{ color: isOver ? tier.bg : 'text.disabled', fontStyle: 'italic' }}>
+                            {isOver ? '↓ Drop here' : 'empty'}
+                          </Typography>
+                        ) : (
+                          tierItems.map(item => (
+                            <Chip
+                              key={item.itemId}
+                              label={item.productNameSnapshot}
+                              size="small"
+                              onDelete={() => removeRarity(item.itemId)}
+                              sx={{
+                                fontSize: '0.68rem',
+                                height: 20,
+                                bgcolor: `${tier.bg}22`,
+                                '& .MuiChip-deleteIcon': { fontSize: 14 },
+                              }}
+                            />
+                          ))
+                        )}
+                      </Box>
+                    </Box>
+                  )
+                })}
+              </Stack>
 
               <Divider sx={{ my: 2 }} />
 
